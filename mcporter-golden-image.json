@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "crawl4ai": {
+      "description": "High-performance web scraping for Symphony Signal",
+      "command": "python3",
+      "args": [
+        "/app/skills/crawl4ai-service/server.py"
+      ]
+    },
+    "tavily": {
+      "baseUrl": "https://mcp.tavily.com/mcp/?tavilyApiKey=${TAVILY_API_KEY}",
+      "env": {
+        "TAVILY_API_KEY": "${TAVILY_API_KEY}"
+      }
+    }
+  },
+  "imports": []
+}

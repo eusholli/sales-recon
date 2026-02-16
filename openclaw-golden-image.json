@@ -141,7 +141,19 @@
       },
       "workspace": "/home/node/.openclaw/workspace",
       "maxConcurrent": 4
-    }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "Symphony Signal",
+        "subagents": {
+          "allowAgents": [
+            "*"
+          ]
+        }
+      }
+    ]
   },
   "tools": {
     "web": {
