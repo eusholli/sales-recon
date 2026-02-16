@@ -1,0 +1,15 @@
+{
+    "name": "ws-proxy",
+    "version": "1.0.0",
+    "description": "WebSocket proxy for OpenClaw sales-recon",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "ws": "^8.18.0",
+        "uuid": "^10.0.0",
+        "@clerk/backend": "^1.18.0"
+    }
+}
