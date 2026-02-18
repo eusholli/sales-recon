@@ -12,22 +12,22 @@ import { createClerkClient, verifyToken } from '@clerk/backend';
 import crypto from 'node:crypto';
 
 // Device Auth Helpers
-import { 
-    loadOrCreateDeviceIdentity, 
-    buildDeviceAuthPayload, 
-    signDevicePayload 
+import {
+    loadOrCreateDeviceIdentity,
+    buildDeviceAuthPayload,
+    signDevicePayload
 } from './device.js';
 
 // Initialize Device Identity
 const DATA_DIR = process.env.DATA_DIR || './data';
 const deviceIdentity = loadOrCreateDeviceIdentity(DATA_DIR);
 
-const clerkClient = createClerkClient({ 
+const clerkClient = createClerkClient({
     secretKey: process.env.CLERK_SECRET_KEY,
-    publishableKey: process.env.CLERK_PUBLISHABLE_KEY 
+    publishableKey: process.env.CLERK_PUBLISHABLE_KEY
 });
 
-const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://sales-recon:18789';
+const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://sales-recon:50045';
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN;
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '8080', 10);
 
@@ -153,11 +153,11 @@ function handleOpenClawMessage(msg) {
                 role: role,
                 scopes: scopes,
                 device: {
-                   id: deviceIdentity.deviceId,
-                   publicKey: deviceIdentity.publicKeyPem, // Logic inside gateway will normalize this
-                   signature: signature,
-                   signedAt: ts,
-                   nonce: nonce
+                    id: deviceIdentity.deviceId,
+                    publicKey: deviceIdentity.publicKeyPem, // Logic inside gateway will normalize this
+                    signature: signature,
+                    signedAt: ts,
+                    nonce: nonce
                 },
                 auth: { token: payloadParams.token },
             },

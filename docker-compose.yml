@@ -10,12 +10,11 @@ services:
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.myresolver.acme.email=your@email.com"
+      - "--certificatesresolvers.myresolver.acme.email=eusholli@gmail.com"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
-      - "8080:8080" # Temporary for direct access web-ui if needed (though api.insecure=false disables it)
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
       - "./letsencrypt:/letsencrypt"
@@ -49,29 +48,26 @@ services:
       - ${OPENCLAW_WORKSPACE_DIR}:/home/node/.openclaw/workspace
     init: true
     restart: unless-stopped
-    command: [ "node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789" ]
+    command: [ "node", "dist/index.js", "gateway", "--bind", "lan", "--port", "50045" ]
     networks:
       - sales-recon-net
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gateway.rule=Host(`gateway.localhost`)"
       - "traefik.http.routers.gateway.entrypoints=web"
-      - "traefik.http.services.gateway.loadbalancer.server.port=18789"
+      - "traefik.http.services.gateway.loadbalancer.server.port=50045"
 
   ws-proxy:
     container_name: sales-recon-ws-proxy
     build: ./ws-proxy
     restart: unless-stopped
     image: sales-recon-ws-proxy:latest
-    env_file:
-      - .env
     environment:
-      OPENCLAW_URL: "ws://sales-recon-openclaw:18789"
+      OPENCLAW_URL: "ws://sales-recon-openclaw:50045"
       OPENCLAW_TOKEN: "${OPENCLAW_GATEWAY_TOKEN}"
       CLERK_PUBLISHABLE_KEY: "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}"
     volumes:
       - ./ws-proxy/data:/app/data
-
     labels:
       - "traefik.enable=true"
       # Production Rule (Ignore this for localhost testing)
@@ -85,10 +81,11 @@ services:
 
       - "traefik.http.services.wsproxy.loadbalancer.server.port=8080"
 
-    depends_on:
-      - sales-recon-openclaw
     networks:
       - sales-recon-net
+
+    depends_on:
+      - sales-recon-openclaw
 
 networks:
   sales-recon-net:

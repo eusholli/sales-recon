@@ -101,3 +101,4 @@ pnpm-debug.log*
 # IDEs
 .idea/
 .vscode/
+DEPLOYMENT_REPORT.md

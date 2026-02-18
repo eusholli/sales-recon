@@ -50,4 +50,4 @@ RUN chmod +x /docker-entrypoint.release.sh
 USER node
 
 ENTRYPOINT ["/docker-entrypoint.release.sh"]
-CMD ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+CMD ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "50045"]
