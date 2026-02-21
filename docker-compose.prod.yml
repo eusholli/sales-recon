@@ -1,0 +1,16 @@
+services:
+  ws-proxy:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=webproxy"
+      - "traefik.http.routers.wsproxy-prod.rule=Host(`chat.yourdomain.com`)"
+      - "traefik.http.routers.wsproxy-prod.entrypoints=websecure"
+      - "traefik.http.routers.wsproxy-prod.tls.certresolver=myresolver"
+      - "traefik.http.middlewares.ws-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.wsproxy-prod.middlewares=ws-headers"
+    networks:
+      - webproxy
+
+networks:
+  webproxy:
+    external: true

@@ -1,26 +1,4 @@
 services:
-  sales-recon-traefik:
-    container_name: sales-recon-traefik
-    image: traefik:latest
-    command:
-      - "--api.insecure=false"
-      - "--providers.docker=true"
-      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
-      - "--certificatesresolvers.myresolver.acme.email=eusholli@gmail.com"
-      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "./letsencrypt:/letsencrypt"
-    networks:
-      - sales-recon-net
-
   sales-recon-openclaw:
     container_name: sales-recon-openclaw
     build:
@@ -33,7 +11,7 @@ services:
       TERM: xterm-256color
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       OPENCLAW_GATEWAY_BIND: "0.0.0.0"
-      OPENCLAW_GATEWAY_AUTO_APPROVE: "true"
+      OPENCLAW_GATEWAY_AUTO_APPROVE: "false"
       npm_config_cache: /tmp/npm-cache
       NPM_CONFIG_PREFIX: /home/node/.npm-global
       PATH: /home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -51,11 +29,6 @@ services:
     command: [ "node", "dist/index.js", "gateway", "--bind", "lan", "--port", "50045" ]
     networks:
       - sales-recon-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.gateway.rule=Host(`gateway.localhost`)"
-      - "traefik.http.routers.gateway.entrypoints=web"
-      - "traefik.http.services.gateway.loadbalancer.server.port=50045"
 
   ws-proxy:
     container_name: sales-recon-ws-proxy
@@ -66,27 +39,17 @@ services:
       OPENCLAW_URL: "ws://sales-recon-openclaw:50045"
       OPENCLAW_TOKEN: "${OPENCLAW_GATEWAY_TOKEN}"
       CLERK_PUBLISHABLE_KEY: "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}"
+      CLERK_SECRET_KEY: "${CLERK_SECRET_KEY}"
     volumes:
       - ./ws-proxy/data:/app/data
-    labels:
-      - "traefik.enable=true"
-      # Production Rule (Ignore this for localhost testing)
-      # - "traefik.http.routers.wsproxy-prod.rule=Host(`chat.yourdomain.com`)"
-      # - "traefik.http.routers.wsproxy-prod.entrypoints=websecure"
-      # - "traefik.http.routers.wsproxy-prod.tls.certresolver=myresolver"
-
-      # Local Rule - THIS is what you use for localhost:80
-      - "traefik.http.routers.wsproxy-local.rule=Host(`localhost`)"
-      - "traefik.http.routers.wsproxy-local.entrypoints=web"
-
-      - "traefik.http.services.wsproxy.loadbalancer.server.port=8080"
-
     networks:
       - sales-recon-net
-
+      - webproxy
     depends_on:
       - sales-recon-openclaw
 
 networks:
   sales-recon-net:
     driver: bridge
+  webproxy:
+    external: true
