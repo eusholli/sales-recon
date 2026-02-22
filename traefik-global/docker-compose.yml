@@ -1,6 +1,6 @@
 services:
   traefik:
-    image: traefik:latest
+    image: traefik:v3.3
     container_name: global-traefik
     restart: unless-stopped
     ports:
@@ -15,6 +15,10 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
+      # ── Prevent Traefik from dropping long-running WebSocket/AI-streaming connections ──
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=600s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=600s"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=600s"
       - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
       - "--certificatesresolvers.myresolver.acme.email=eusholli@gmail.com"
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"

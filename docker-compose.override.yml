@@ -1,0 +1,8 @@
+services:
+  ws-proxy:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wsproxy-local.rule=Host(`localhost`)"
+      - "traefik.http.routers.wsproxy-local.entrypoints=web"
+    ports:
+      - "8080:8080"
