@@ -3,8 +3,25 @@
 import { useAuth, useUser, UserButton } from "@clerk/nextjs";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Send, Terminal, Loader2, AlertCircle } from "lucide-react";
 import clsx from "clsx";
+
+/* ── Typing indicator (three bouncing dots) ── */
+function TypingIndicator() {
+    return (
+        <div className="flex flex-col max-w-[85%] self-start items-start">
+            <div className="text-xs text-gray-500 mb-1 px-1 font-mono uppercase">Operator</div>
+            <div className="rounded-lg px-4 py-3 shadow-md bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700">
+                <div className="flex items-center gap-1.5 h-5">
+                    <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "0ms" }} />
+                    <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "150ms" }} />
+                    <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "300ms" }} />
+                </div>
+            </div>
+        </div>
+    );
+}
 
 type Message = {
     role: "user" | "assistant" | "system";
@@ -18,6 +35,7 @@ export default function ChatInterface() {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState("");
     const [isConnected, setIsConnected] = useState(false);
+    const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -25,7 +43,7 @@ export default function ChatInterface() {
     // Auto-scroll to bottom
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, [messages]);
+    }, [messages, isWaitingForResponse]);
 
     // Connect to WebSocket
     useEffect(() => {
@@ -59,6 +77,7 @@ export default function ChatInterface() {
                         const data = JSON.parse(event.data);
 
                         if (data.type === "chunk") {
+                            setIsWaitingForResponse(false);
                             setMessages((prev) => {
                                 const lastMsg = prev[prev.length - 1];
                                 if (lastMsg && lastMsg.role === "assistant") {
@@ -72,6 +91,7 @@ export default function ChatInterface() {
                             });
                         } else if (data.type === "error") {
                             setError(data.message);
+                            setIsWaitingForResponse(false);
                         }
                     } catch (err) {
                         console.error("Failed to parse message:", err);
@@ -112,6 +132,7 @@ export default function ChatInterface() {
 
         const userMsg: Message = { role: "user", content: input, id: Date.now().toString() };
         setMessages((prev) => [...prev, userMsg]);
+        setIsWaitingForResponse(true);
 
         // Send to backend
         wsRef.current.send(JSON.stringify({
@@ -179,11 +200,30 @@ export default function ChatInterface() {
                                     : "bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700"
                             )}
                         >
-                            <div className="prose prose-invert prose-sm max-w-none break-words">
+                            <div className="prose prose-invert prose-sm max-w-none break-words
+                                prose-headings:text-gray-100 prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1
+                                prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
+                                prose-blockquote:border-blue-500/50 prose-blockquote:text-gray-300
+                                prose-a:text-blue-400 prose-a:underline prose-a:underline-offset-2
+                                prose-strong:text-gray-100 prose-em:text-gray-200
+                                prose-table:border-collapse prose-th:border prose-th:border-gray-700 prose-th:px-3 prose-th:py-1 prose-th:bg-gray-800
+                                prose-td:border prose-td:border-gray-700 prose-td:px-3 prose-td:py-1
+                                prose-hr:border-gray-700"
+                            >
                                 <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
                                     components={{
-                                        pre: ({ node, ...props }) => <div className="bg-gray-950 rounded p-2 my-2 overflow-x-auto border border-gray-800" {...props as React.HTMLAttributes<HTMLDivElement>} />,
-                                        code: ({ node, ...props }) => <code className="bg-gray-900/50 rounded px-1 py-0.5 text-blue-200 font-mono text-xs" {...props} />
+                                        pre: ({ node, ...props }) => (
+                                            <div className="bg-gray-950 rounded-lg p-3 my-2 overflow-x-auto border border-gray-700/60 text-[13px]" {...props as React.HTMLAttributes<HTMLDivElement>} />
+                                        ),
+                                        code: ({ node, className, children, ...props }) => {
+                                            const isBlock = className?.startsWith("language-");
+                                            if (isBlock) {
+                                                return <code className={`${className ?? ""} font-mono text-[13px]`} {...props}>{children}</code>;
+                                            }
+                                            return <code className="bg-gray-700/50 rounded px-1.5 py-0.5 text-blue-200 font-mono text-xs" {...props}>{children}</code>;
+                                        },
+                                        a: ({ node, ...props }) => <a className="text-blue-400 hover:text-blue-300 underline underline-offset-2 transition-colors" target="_blank" rel="noopener noreferrer" {...props} />,
                                     }}
                                 >
                                     {msg.content}
@@ -192,6 +232,8 @@ export default function ChatInterface() {
                         </div>
                     </div>
                 ))}
+
+                {isWaitingForResponse && <TypingIndicator />}
 
                 {error && (
                     <div className="flex items-center gap-2 p-3 bg-red-900/20 border border-red-900/50 rounded text-red-400 text-sm self-center">
