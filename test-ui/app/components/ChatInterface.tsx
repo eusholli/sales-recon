@@ -7,17 +7,24 @@ import remarkGfm from "remark-gfm";
 import { Send, Terminal, Loader2, AlertCircle } from "lucide-react";
 import clsx from "clsx";
 
-/* ── Typing indicator (three bouncing dots) ── */
-function TypingIndicator() {
+/* ── Typing indicator (three bouncing dots + optional status text) ── */
+function TypingIndicator({ statusMessage }: { statusMessage?: string | null }) {
     return (
         <div className="flex flex-col max-w-[85%] self-start items-start">
             <div className="text-xs text-gray-500 mb-1 px-1 font-mono uppercase">Operator</div>
             <div className="rounded-lg px-4 py-3 shadow-md bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700">
-                <div className="flex items-center gap-1.5 h-5">
-                    <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "0ms" }} />
-                    <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "150ms" }} />
-                    <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "300ms" }} />
-                </div>
+                {statusMessage ? (
+                    <div className="flex items-center gap-2 text-sm">
+                        <span className="typing-dot w-2 h-2 rounded-full bg-blue-400" style={{ animationDelay: "0ms" }} />
+                        <span className="text-blue-300 font-mono text-xs">{statusMessage}</span>
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-1.5 h-5">
+                        <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "0ms" }} />
+                        <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "150ms" }} />
+                        <span className="typing-dot w-2 h-2 rounded-full bg-gray-400" style={{ animationDelay: "300ms" }} />
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -36,6 +43,7 @@ export default function ChatInterface() {
     const [input, setInput] = useState("");
     const [isConnected, setIsConnected] = useState(false);
     const [isWaitingForResponse, setIsWaitingForResponse] = useState(false);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -76,8 +84,18 @@ export default function ChatInterface() {
                     try {
                         const data = JSON.parse(event.data);
 
+                        // Load chat history from server on connect
+                        if (data.type === "history") {
+                            setMessages(data.messages.map((m: { role: string; content: string; timestamp?: number }) => ({
+                                role: m.role as "user" | "assistant",
+                                content: m.content,
+                                id: String(m.timestamp || Date.now()),
+                            })));
+                        }
+
                         if (data.type === "chunk") {
                             setIsWaitingForResponse(false);
+                            setStatusMessage(null);
                             setMessages((prev) => {
                                 const lastMsg = prev[prev.length - 1];
                                 if (lastMsg && lastMsg.role === "assistant") {
@@ -89,9 +107,33 @@ export default function ChatInterface() {
                                     return [...prev, { role: "assistant", content: data.content, id: Date.now().toString() }];
                                 }
                             });
+                        } else if (data.type === "status") {
+                            setStatusMessage(data.content);
+                        } else if (data.type === "thinking") {
+                            // Show thinking as a dimmed inline message
+                            setStatusMessage(null);
+                            setMessages((prev) => {
+                                const lastMsg = prev[prev.length - 1];
+                                if (lastMsg && lastMsg.role === "system") {
+                                    return [
+                                        ...prev.slice(0, -1),
+                                        { ...lastMsg, content: lastMsg.content + data.content }
+                                    ];
+                                } else {
+                                    return [...prev, { role: "system", content: data.content, id: `thinking-${Date.now()}` }];
+                                }
+                            });
+                        } else if (data.type === "tool") {
+                            // Show tool invocation as a status message
+                            const toolName = data.data?.name || data.data?.tool || "tool";
+                            setStatusMessage(`Using ${toolName}…`);
+                        } else if (data.type === "final") {
+                            setIsWaitingForResponse(false);
+                            setStatusMessage(null);
                         } else if (data.type === "error") {
                             setError(data.message);
                             setIsWaitingForResponse(false);
+                            setStatusMessage(null);
                         }
                     } catch (err) {
                         console.error("Failed to parse message:", err);
@@ -190,14 +232,16 @@ export default function ChatInterface() {
                         )}
                     >
                         <div className="text-xs text-gray-500 mb-1 px-1 font-mono uppercase">
-                            {msg.role === "user" ? "You" : "Operator"}
+                            {msg.role === "user" ? "You" : msg.role === "system" ? "Thinking" : "Operator"}
                         </div>
                         <div
                             className={clsx(
                                 "rounded-lg px-4 py-3 shadow-md text-sm leading-relaxed",
                                 msg.role === "user"
                                     ? "bg-blue-600 text-white rounded-br-none"
-                                    : "bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700"
+                                    : msg.role === "system"
+                                        ? "bg-gray-800/50 text-gray-400 rounded-bl-none border border-gray-700/50 italic text-xs"
+                                        : "bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700"
                             )}
                         >
                             <div className="prose prose-invert prose-sm max-w-none break-words
@@ -233,7 +277,7 @@ export default function ChatInterface() {
                     </div>
                 ))}
 
-                {isWaitingForResponse && <TypingIndicator />}
+                {isWaitingForResponse && <TypingIndicator statusMessage={statusMessage} />}
 
                 {error && (
                     <div className="flex items-center gap-2 p-3 bg-red-900/20 border border-red-900/50 rounded text-red-400 text-sm self-center">

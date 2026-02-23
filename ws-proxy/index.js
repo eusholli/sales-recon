@@ -10,6 +10,8 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadOrCreateDeviceIdentity, buildDeviceAuthPayload, signDevicePayload, publicKeyToBase64Url } from './device.js';
 
 const clerkClient = createClerkClient({
@@ -47,6 +49,42 @@ const browserSessions = new Map();
 const sessionToBrowser = new Map();
 // Maps request ID -> { browserWs, sessionKey }
 const pendingRequests = new Map();
+// Buffer for accumulating assistant response per session
+const assistantBuffers = new Map();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat History Persistence
+// ─────────────────────────────────────────────────────────────────────────────
+
+const HISTORY_DIR = path.join(DEVICE_DATA_DIR, 'history');
+fs.mkdirSync(HISTORY_DIR, { recursive: true });
+
+function getHistoryPath(userId) {
+    return path.join(HISTORY_DIR, `${userId}.json`);
+}
+
+function loadHistory(userId) {
+    try {
+        const data = fs.readFileSync(getHistoryPath(userId), 'utf8');
+        return JSON.parse(data);
+    } catch {
+        return [];
+    }
+}
+
+function appendToHistory(userId, message) {
+    const history = loadHistory(userId);
+    history.push(message);
+    fs.writeFileSync(getHistoryPath(userId), JSON.stringify(history, null, 2), 'utf8');
+}
+
+function sendHistory(ws, userId) {
+    const history = loadHistory(userId);
+    if (history.length > 0) {
+        sendToBrowser(ws, { type: 'history', messages: history });
+        console.log(`[ws-proxy] Sent ${history.length} history messages to user ${userId}`);
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenClaw Connection
@@ -178,50 +216,126 @@ function handleOpenClawMessage(msg) {
         return;
     }
 
-    // Handle agent events (streaming delta)
+    // Helper: resolve the session key from agent events (strip agent:main: prefix)
+    function resolveSessionKey(rawKey) {
+        if (rawKey && rawKey.includes(':')) {
+            const parts = rawKey.split(':');
+            return parts[parts.length - 1];
+        }
+        return rawKey;
+    }
+
+    // Helper: find userId for a sessionKey
+    function findUserIdForSession(sessionKey) {
+        for (const [ws, session] of browserSessions) {
+            if (session.sessionKey === sessionKey) return session.userId;
+        }
+        return null;
+    }
+
+    // Handle agent events (streaming delta, status, thinking, tool)
     if (msg.type === 'event' && msg.event === 'agent') {
         const payload = msg.payload || {};
-        let sessionKey = payload.sessionKey;
-
-        // Fix for session key mismatch (agent:main: prefix)
-        // Format is typically agent:agentId:sessionKey
-        if (sessionKey && sessionKey.includes(':')) {
-            const parts = sessionKey.split(':');
-            sessionKey = parts[parts.length - 1]; // Take the last part which is the browser-... UUID
-        }
-
+        const rawSessionKey = payload.sessionKey;
+        const sessionKey = resolveSessionKey(rawSessionKey);
         const browserWs = sessionToBrowser.get(sessionKey);
+
+        console.log(`[ws-proxy] Agent event: stream=${payload.stream}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, browserFound=${!!browserWs}`);
 
         // Capture assistant content from stream
         if (browserWs && payload.stream === 'assistant' && payload.data?.delta) {
+            console.log(`[ws-proxy] -> Browser: chunk (${payload.data.delta.length} chars)`);
             sendToBrowser(browserWs, { type: 'chunk', content: payload.data.delta });
+            // Buffer for history
+            const buf = assistantBuffers.get(sessionKey) || '';
+            assistantBuffers.set(sessionKey, buf + payload.data.delta);
         }
 
         // Also capture non-streaming assistant content (just in case)
         if (browserWs && payload.message?.role === 'assistant' && payload.message?.content) {
             sendToBrowser(browserWs, { type: 'chunk', content: payload.message.content });
+            const buf = assistantBuffers.get(sessionKey) || '';
+            assistantBuffers.set(sessionKey, buf + payload.message.content);
         }
+
+        // Forward lifecycle events (processing start/end)
+        if (browserWs && payload.stream === 'lifecycle') {
+            if (payload.data?.phase === 'start') {
+                sendToBrowser(browserWs, { type: 'status', content: 'Processing…' });
+            }
+            // 'end' phase is handled by the chat 'final' event
+        }
+
+        // Forward status updates (e.g. "Searching the web…", "Analyzing…")
+        if (browserWs && payload.stream === 'status') {
+            const statusText = payload.data?.delta || payload.data?.status || payload.data?.message || '';
+            if (statusText) {
+                sendToBrowser(browserWs, { type: 'status', content: statusText });
+            }
+        }
+
+        // Forward thinking/reasoning stream
+        if (browserWs && payload.stream === 'thinking') {
+            const thinkingText = payload.data?.delta || '';
+            if (thinkingText) {
+                sendToBrowser(browserWs, { type: 'thinking', content: thinkingText });
+            }
+        }
+
+        // Forward tool invocations
+        if (browserWs && payload.stream === 'tool') {
+            sendToBrowser(browserWs, { type: 'tool', data: payload.data });
+        }
+
+        // Log any other streams we haven't handled for discovery
+        if (browserWs && payload.stream && !['assistant', 'lifecycle', 'status', 'thinking', 'tool'].includes(payload.stream)) {
+            if (process.env.DEBUG === 'true') {
+                console.log(`[ws-proxy] Unhandled agent stream '${payload.stream}':`, JSON.stringify(payload.data));
+            }
+        }
+
         return;
     }
 
     // Handle chat events (status updates / final)
     if (msg.type === 'event' && msg.event === 'chat') {
         const payload = msg.payload || {};
-        const sessionKey = payload.sessionKey;
+        const rawSessionKey = payload.sessionKey;
+        const sessionKey = resolveSessionKey(rawSessionKey);
         const browserWs = sessionToBrowser.get(sessionKey);
+
+        console.log(`[ws-proxy] Chat event: state=${payload.state}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, browserFound=${!!browserWs}`);
 
         if (!browserWs) {
             return;
         }
 
-        // We use 'agent' event for chunks, 'chat' event with state='final' signals completion
+        // Forward non-final state changes as status updates
+        if (payload.state && payload.state !== 'final') {
+            sendToBrowser(browserWs, { type: 'status', content: payload.state });
+        }
+
+        // Final state: flush content and persist history
         if (payload.state === 'final') {
-            // Check if there's any final content in this message to flush
             if (payload.message?.content) {
                 sendToBrowser(browserWs, { type: 'chunk', content: payload.message.content });
+                const buf = assistantBuffers.get(sessionKey) || '';
+                assistantBuffers.set(sessionKey, buf + payload.message.content);
             }
 
             sendToBrowser(browserWs, { type: 'final' });
+
+            // Persist the complete assistant response to history
+            const userId = findUserIdForSession(sessionKey);
+            const fullResponse = assistantBuffers.get(sessionKey);
+            if (userId && fullResponse) {
+                appendToHistory(userId, {
+                    role: 'assistant',
+                    content: fullResponse,
+                    timestamp: Date.now(),
+                });
+            }
+            assistantBuffers.delete(sessionKey);
 
             // Clean up the pending request for this session
             for (const [id, req] of pendingRequests) {
@@ -230,6 +344,13 @@ function handleOpenClawMessage(msg) {
                     break;
                 }
             }
+        }
+    }
+
+    // Log unhandled event types for discovery
+    if (msg.type === 'event' && !['agent', 'chat', 'connect.challenge'].includes(msg.event)) {
+        if (process.env.DEBUG === 'true') {
+            console.log(`[ws-proxy] Unhandled event type '${msg.event}':`, JSON.stringify(msg.payload));
         }
     }
 }
@@ -294,15 +415,26 @@ wss.on('connection', async (ws, req) => {
         return;
     }
 
-    const sessionKey = `browser-${uuidv4()}`;
-    console.log(`[ws-proxy] Browser connected, sessionKey: ${sessionKey}`);
-    // console.log(`[ws-proxy] Headers:`, JSON.stringify(req.headers, null, 2));
+    // Use a deterministic, user-scoped session key so the same user
+    // always resumes the same OpenClaw conversation thread.
+    const sessionKey = `user-${userId.toLowerCase()}`;
+    console.log(`[ws-proxy] Browser connected, user: ${userId}, sessionKey: ${sessionKey}`);
+
+    // If this user already has an active connection, close the old one
+    const existingWs = sessionToBrowser.get(sessionKey);
+    if (existingWs && existingWs !== ws && existingWs.readyState === WebSocket.OPEN) {
+        console.log(`[ws-proxy] Closing stale connection for ${sessionKey}`);
+        existingWs.close(1000, 'Replaced by new connection');
+    }
 
     browserSessions.set(ws, { sessionKey, userId });
     sessionToBrowser.set(sessionKey, ws);
 
     // Send connection confirmation
     sendToBrowser(ws, { type: 'connected', sessionKey, userId });
+
+    // Send chat history if it exists
+    sendHistory(ws, userId);
 
     ws.on('message', (data) => {
         try {
@@ -316,8 +448,11 @@ wss.on('connection', async (ws, req) => {
 
     ws.on('close', (code, reason) => {
         console.log(`[ws-proxy] Browser disconnected: ${sessionKey} Code: ${code} Reason: ${reason}`);
+        // Only clean up if this WS is still the active one for this session
+        if (sessionToBrowser.get(sessionKey) === ws) {
+            sessionToBrowser.delete(sessionKey);
+        }
         browserSessions.delete(ws);
-        sessionToBrowser.delete(sessionKey);
     });
 
     ws.on('error', (err) => {
@@ -335,6 +470,12 @@ function handleBrowserMessage(ws, msg) {
     }
 
     if (msg.type === 'message') {
+        // Persist user message to history
+        appendToHistory(session.userId, {
+            role: 'user',
+            content: msg.content,
+            timestamp: Date.now(),
+        });
         sendToOpenClaw(ws, session.sessionKey, msg.content, msg.entityType, msg.entityName);
     } else {
         sendToBrowser(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
