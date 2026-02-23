@@ -25,7 +25,8 @@ interface UseOpenClawReturn {
 }
 
 export function useOpenClaw({
-    gatewayUrl = 'ws://ws-proxy.localhost', // Default to proxy via Traefik (port 80)
+    gatewayUrl = 'ws://localhost:8080',
+    // Default to proxy via Traefik (port 80)
     entityType,
     entityName,
     onReportUpdate,

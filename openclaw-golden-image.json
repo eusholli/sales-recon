@@ -165,8 +165,13 @@
     "port": 50045,
     "mode": "local",
     "bind": "loopback",
+    "controlUi": {
+      "allowedOrigins": [
+        "https://control.maximh.us"
+      ]
+    },
     "auth": {
-      "mode": "token",
+      "mode": "token"
     },
     "trustedProxies": [
       "127.0.0.1",

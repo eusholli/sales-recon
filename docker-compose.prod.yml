@@ -1,15 +1,24 @@
 services:
+  sales-recon-openclaw:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=webproxy"
+      - "traefik.http.routers.control-prod.rule=Host(`control.maximh.us`)"
+      - "traefik.http.routers.control-prod.entrypoints=websecure"
+      - "traefik.http.routers.control-prod.tls.certresolver=myresolver"
+      - "traefik.http.services.control.loadbalancer.server.port=50045"
+    networks:
+      - webproxy
+
   ws-proxy:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=webproxy"
-      # ── REPLACE YOUR_DOMAIN with your actual domain (e.g. chat.example.com) ──
-      - "traefik.http.routers.wsproxy-prod.rule=Host(`YOUR_DOMAIN`)"
+      - "traefik.http.routers.wsproxy-prod.rule=Host(`chat.maximh.us`)"
       - "traefik.http.routers.wsproxy-prod.entrypoints=websecure"
       - "traefik.http.routers.wsproxy-prod.tls.certresolver=myresolver"
       - "traefik.http.middlewares.ws-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
       - "traefik.http.routers.wsproxy-prod.middlewares=ws-headers"
-      # ── Explicit backend port; prevents Traefik ambiguity ──
       - "traefik.http.services.wsproxy.loadbalancer.server.port=8080"
     networks:
       - webproxy

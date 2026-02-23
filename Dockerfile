@@ -1,4 +1,4 @@
-FROM ghcr.io/openclaw/openclaw:latest
+FROM ghcr.io/openclaw/openclaw:main@sha256:199355cbe5a5059cbec9fec197bcb140be42d5f8cd987a8ce9c6ecbbea7c3eb9
 
 # Switch to root to install dependencies
 USER root

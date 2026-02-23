@@ -10,31 +10,26 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { createClerkClient, verifyToken } from '@clerk/backend';
 import crypto from 'node:crypto';
-
-// Device Auth Helpers
-import {
-    loadOrCreateDeviceIdentity,
-    buildDeviceAuthPayload,
-    signDevicePayload
-} from './device.js';
-
-// Initialize Device Identity
-const DATA_DIR = process.env.DATA_DIR || './data';
-const deviceIdentity = loadOrCreateDeviceIdentity(DATA_DIR);
+import { loadOrCreateDeviceIdentity, buildDeviceAuthPayload, signDevicePayload, publicKeyToBase64Url } from './device.js';
 
 const clerkClient = createClerkClient({
     secretKey: process.env.CLERK_SECRET_KEY,
     publishableKey: process.env.CLERK_PUBLISHABLE_KEY
 });
 
-const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://sales-recon:50045';
+const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://openclaw:50045';
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN;
 const PROXY_PORT = parseInt(process.env.PROXY_PORT || '8080', 10);
+const DEVICE_DATA_DIR = process.env.DEVICE_DATA_DIR || '/app/data';
 
 if (!OPENCLAW_TOKEN) {
     console.error('[ws-proxy] OPENCLAW_TOKEN is required');
     process.exit(1);
 }
+
+// Load or create a persistent device identity (Ed25519 keypair)
+const deviceIdentity = loadOrCreateDeviceIdentity(DEVICE_DATA_DIR);
+console.log(`[ws-proxy] Device ID: ${deviceIdentity.deviceId}`);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State
@@ -58,7 +53,6 @@ const pendingRequests = new Map();
 // ─────────────────────────────────────────────────────────────────────────────
 
 function connectToOpenClaw() {
-    // Append token to URL for initial connection if supported, or rely on connect frame
     const url = `${OPENCLAW_URL}?token=${OPENCLAW_TOKEN}`;
     console.log(`[ws-proxy] Connecting to OpenClaw: ${OPENCLAW_URL}`);
 
@@ -66,7 +60,7 @@ function connectToOpenClaw() {
 
     openclawWs.on('open', () => {
         console.log('[ws-proxy] Connected to OpenClaw');
-        reconnectDelay = 1000; // Reset backoff
+        reconnectDelay = 1000;
     });
 
     openclawWs.on('message', (data) => {
@@ -102,41 +96,32 @@ function getNextId() {
 }
 
 function handleOpenClawMessage(msg) {
-    console.log('[ws-proxy] OpenClaw:', JSON.stringify(msg));
+    if (process.env.DEBUG === 'true') {
+        console.log('[ws-proxy] OpenClaw:', JSON.stringify(msg));
+    }
 
-    // Handle connect challenge
+    // Handle connect challenge — respond with device-signed auth
     if (msg.event === 'connect.challenge') {
         const nonce = msg.payload?.nonce;
-        if (!nonce) {
-            console.error('[ws-proxy] Received connect.challenge without nonce');
-            return;
-        }
-
-        const clientId = 'cli'; // Or 'ws-proxy'
-        const clientMode = 'cli'; // Or 'gateway-proxy'
+        const signedAt = Date.now();
         const role = 'operator';
         const scopes = ['operator.read', 'operator.write'];
-        const ts = Date.now();
+        const clientId = 'gateway-client';
+        const clientMode = 'backend';
 
-        // 1. Build Payload
-        const payloadParams = {
-            version: 'v2',
+        // Build and sign the device auth payload (v2 format)
+        const authPayload = buildDeviceAuthPayload({
             deviceId: deviceIdentity.deviceId,
-            clientId: clientId,
-            clientMode: clientMode,
-            role: role,
-            scopes: scopes,
-            signedAtMs: ts,
-            token: process.env.OPENCLAW_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || undefined,
-            nonce: nonce,
-        };
+            clientId,
+            clientMode,
+            role,
+            scopes,
+            signedAtMs: signedAt,
+            token: OPENCLAW_TOKEN,
+            nonce,
+        });
+        const signature = signDevicePayload(deviceIdentity.privateKeyPem, authPayload);
 
-        const payload = buildDeviceAuthPayload(payloadParams);
-
-        // 2. Sign Payload
-        const signature = signDevicePayload(deviceIdentity.privateKeyPem, payload);
-
-        // 3. Send Response
         const response = {
             type: 'req',
             id: getNextId(),
@@ -146,29 +131,34 @@ function handleOpenClawMessage(msg) {
                 maxProtocol: 3,
                 client: {
                     id: clientId,
+                    displayName: 'Sales-Recon-Proxy-Dallas',
                     version: '1.0.0',
                     platform: 'linux',
                     mode: clientMode,
                 },
-                role: role,
-                scopes: scopes,
+                role,
+                scopes,
+                caps: [],
+                auth: { token: OPENCLAW_TOKEN },
                 device: {
                     id: deviceIdentity.deviceId,
-                    publicKey: deviceIdentity.publicKeyPem, // Logic inside gateway will normalize this
-                    signature: signature,
-                    signedAt: ts,
-                    nonce: nonce
+                    publicKey: publicKeyToBase64Url(deviceIdentity.publicKeyPem),
+                    signature,
+                    signedAt,
+                    nonce,
                 },
-                auth: { token: payloadParams.token },
+                locale: 'en-US',
+                userAgent: 'sales-recon-ws-proxy/1.0.0',
             },
         };
-        console.log(`[ws-proxy] Sending device-authenticated handshake for ${deviceIdentity.deviceId}`);
-        openclawWs.send(JSON.stringify(response));
+        console.log('[ws-proxy] Sending connect handshake (protocol v3, device-signed)');
+        const frame = JSON.stringify(response);
+        console.log('[ws-proxy] -> OpenClaw (Handshake):', frame);
+        openclawWs.send(frame);
         return;
     }
 
-
-    // Handle connect response
+    // Handle connect response (hello-ok)
     if (msg.type === 'res' && msg.ok && !isConnected) {
         isConnected = true;
         console.log('[ws-proxy] Handshake complete, ready for clients');
@@ -277,11 +267,12 @@ function sendToOpenClaw(browserWs, sessionKey, message, entityType, entityName) 
 
 const wss = new WebSocketServer({ port: PROXY_PORT });
 
-wss.on('listening', () => {
-    console.log(`[ws-proxy] Listening for browser clients on port ${PROXY_PORT}`);
+wss.on('error', (err) => {
+    console.error('[ws-proxy] WebSocket Server error:', err.message);
 });
 
 wss.on('connection', async (ws, req) => {
+    console.log(`[ws-proxy] Incoming connection attempt from ${req.socket.remoteAddress}`);
     // 1. Authenticate the connection
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = url.searchParams.get('token');

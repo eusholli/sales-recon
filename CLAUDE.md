@@ -11,37 +11,35 @@ Sales-Recon is a 3-container Docker stack that provides AI-powered intelligence 
 ### Container Stack
 
 ```
-Browser → Traefik (global) → ws-proxy → OpenClaw (AI gateway)
-                                              ↓
-                                    MCP Skills: Crawl4AI, Tavily
+Browser → Traefik (prod only) → ws-proxy → OpenClaw (AI gateway)
+              ↓                 ↓
+      control.maximh.us   chat.maximh.us
 ```
 
 **`sales-recon-openclaw`** (`Dockerfile`, `skills/`, `scripts/`)
 - Base image: `ghcr.io/openclaw/openclaw:latest`
 - Extended with Python, Playwright/Chromium, and Crawl4AI for web scraping
-- On startup, `scripts/docker-entrypoint.release.sh` registers MCP servers via `mcporter`:
-  - `crawl4ai`: Python MCP server (`skills/crawl4ai-service/server.py`) using FastMCP + Crawl4AI
-  - `tavily`: Remote HTTP MCP server (if `TAVILY_API_KEY` is set)
-- Config persisted to `OPENCLAW_CONFIG_DIR` volume; golden-image templates: `openclaw-golden-image.json` and `mcporter-golden-image.json`
+- On startup, `scripts/docker-entrypoint.release.sh` registers MCP servers via `mcporter`
+- Built-in Control UI exposed on port 50045, routed via `control.maximh.us` in prod
 
 **`ws-proxy`** (`ws-proxy/`)
 - Node.js WebSocket bridge (ESM, port 8080)
 - Authenticates browser clients using Clerk JWT (`@clerk/backend` `verifyToken`)
-- Maintains a single persistent WebSocket connection to OpenClaw, multiplexed across browser sessions
-- Device identity (Ed25519 keypair) stored in `ws-proxy/data/device.identity.json` (gitignored, **must be backed up** — if lost, the OpenClaw gateway will reject the proxy)
-- Performs challenge-response device auth handshake with OpenClaw on connect
+- Routes browser sessions to OpenClaw via `ws://openclaw:50045` with token-only auth
+- Role: `operator` (using operator scopes for chat messages)
+- **Device identity removed**: Previously used Ed25519 pairing, now relies solely on `OPENCLAW_TOKEN` for proxy-to-gateway auth (per OpenClaw programmatic connect protocol)
 
-**`traefik-global/`** — Global reverse proxy, runs as a **separate independent stack** on the VPS (not part of this project's `docker-compose.yml`). Attaches to the external `webproxy` Docker network.
+**`traefik-global/`** — Global reverse proxy, runs as a separate stack.
 
-**`test-ui/`** — Next.js 16 + Tailwind + Clerk frontend. Uses the `useOpenClaw` hook (`app/hooks/useOpenClaw.ts`) to manage a WebSocket connection to ws-proxy. Not containerized; run locally for development.
+**`test-ui/`** — Next.js frontend. Connects to `ws://gateway.local:8080` (local) or `wss://chat.maximh.us` (prod).
 
 ### Docker Compose File Strategy
 
 | File | Purpose | Usage |
 |---|---|---|
-| `docker-compose.yml` | Base config (no Traefik routing labels) | Always used |
-| `docker-compose.override.yml` | Local dev overrides (port 8080 exposed, local routing) | Auto-merged by Docker Compose when present (gitignored) |
-| `docker-compose.prod.yml` | Production labels (TLS, real domain, `webproxy` network) | Explicitly merged for production |
+| `docker-compose.yml` | Base config | Always used |
+| `docker-compose.override.yml` | Local dev: `50045:50045` (Control UI) & `8080:8080` (ws-proxy) | Auto-merged locally |
+| `docker-compose.prod.yml` | Traefik labels for `control.maximh.us` and `chat.maximh.us` | Merge for prod |
 
 ## Common Commands
 

@@ -42,7 +42,7 @@ export default function ChatInterface() {
 
                 // For local dev, we use localhost:80 (Traefik HTTP entrypoint). In prod, this would be wss://chat.yourdomain.com
                 const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-                const host = window.location.hostname === "localhost" ? "localhost:80" : window.location.host;
+                const host = window.location.hostname === "localhost" ? "localhost:8080" : window.location.host;
                 const wsUrl = `${protocol}://${host}/?token=${token}`;
 
                 console.log("Connecting to:", wsUrl);
@@ -57,7 +57,7 @@ export default function ChatInterface() {
                 ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        
+
                         if (data.type === "chunk") {
                             setMessages((prev) => {
                                 const lastMsg = prev[prev.length - 1];
@@ -112,7 +112,7 @@ export default function ChatInterface() {
 
         const userMsg: Message = { role: "user", content: input, id: Date.now().toString() };
         setMessages((prev) => [...prev, userMsg]);
-        
+
         // Send to backend
         wsRef.current.send(JSON.stringify({
             type: "message",
@@ -159,7 +159,7 @@ export default function ChatInterface() {
                         <p className="font-mono text-sm">Awaiting command input...</p>
                     </div>
                 )}
-                
+
                 {messages.map((msg) => (
                     <div
                         key={msg.id}
@@ -174,16 +174,16 @@ export default function ChatInterface() {
                         <div
                             className={clsx(
                                 "rounded-lg px-4 py-3 shadow-md text-sm leading-relaxed",
-                                msg.role === "user" 
-                                    ? "bg-blue-600 text-white rounded-br-none" 
+                                msg.role === "user"
+                                    ? "bg-blue-600 text-white rounded-br-none"
                                     : "bg-gray-800 text-gray-200 rounded-bl-none border border-gray-700"
                             )}
                         >
                             <div className="prose prose-invert prose-sm max-w-none break-words">
-                                <ReactMarkdown 
+                                <ReactMarkdown
                                     components={{
-                                        pre: ({node, ...props}) => <div className="bg-gray-950 rounded p-2 my-2 overflow-x-auto border border-gray-800" {...props as React.HTMLAttributes<HTMLDivElement>} />,
-                                        code: ({node, ...props}) => <code className="bg-gray-900/50 rounded px-1 py-0.5 text-blue-200 font-mono text-xs" {...props} />
+                                        pre: ({ node, ...props }) => <div className="bg-gray-950 rounded p-2 my-2 overflow-x-auto border border-gray-800" {...props as React.HTMLAttributes<HTMLDivElement>} />,
+                                        code: ({ node, ...props }) => <code className="bg-gray-900/50 rounded px-1 py-0.5 text-blue-200 font-mono text-xs" {...props} />
                                     }}
                                 >
                                     {msg.content}
@@ -199,7 +199,7 @@ export default function ChatInterface() {
                         <span>{error}</span>
                     </div>
                 )}
-                
+
                 <div ref={messagesEndRef} />
             </div>
 
@@ -235,7 +235,7 @@ export default function ChatInterface() {
                 </div>
                 <div className="text-center mt-2">
                     <p className="text-[10px] text-gray-600 font-mono">
-                         SECURE CONNECTION • END-TO-END ENCRYPTED
+                        SECURE CONNECTION • END-TO-END ENCRYPTED
                     </p>
                 </div>
             </div>

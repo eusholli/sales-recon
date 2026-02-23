@@ -100,4 +100,4 @@ pnpm-debug.log*
 
 # IDEs
 .idea/
-.vscode/
+.vscode/docker-compose.override.yml
