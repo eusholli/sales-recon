@@ -89,6 +89,8 @@ USER.md
 /local/
 package-lock.json
 ws-proxy/data/device.identity.json
+ws-proxy/data/device.json
+ws-proxy/data/history/
 
 # Build and logs
 .next/
