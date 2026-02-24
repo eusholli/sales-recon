@@ -66,10 +66,18 @@ export default function ChatInterface() {
                     return;
                 }
 
-                // For local dev, we use localhost:80 (Traefik HTTP entrypoint). In prod, this would be wss://chat.yourdomain.com
-                const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-                const host = window.location.hostname === "localhost" ? "localhost:8080" : window.location.host;
-                const wsUrl = `${protocol}://${host}/?token=${token}`;
+                // Use env var if set, otherwise fall back to deriving from current page URL
+                const envWsUrl = process.env.NEXT_PUBLIC_WS_URL;
+                let wsUrl: string;
+                if (envWsUrl) {
+                    wsUrl = `${envWsUrl}${envWsUrl.includes("?") ? "&" : "?"}token=${token}`;
+                } else {
+                    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+                    const host = window.location.hostname === "localhost"
+                        ? "localhost:8080"
+                        : window.location.host;
+                    wsUrl = `${protocol}://${host}/?token=${token}`;
+                }
 
                 console.log("Connecting to:", wsUrl);
                 ws = new WebSocket(wsUrl);

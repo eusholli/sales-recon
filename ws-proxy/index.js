@@ -253,9 +253,12 @@ function handleOpenClawMessage(msg) {
 
         // Also capture non-streaming assistant content (just in case)
         if (browserWs && payload.message?.role === 'assistant' && payload.message?.content) {
-            sendToBrowser(browserWs, { type: 'chunk', content: payload.message.content });
+            const content = typeof payload.message.content === 'string'
+                ? payload.message.content
+                : JSON.stringify(payload.message.content);
+            sendToBrowser(browserWs, { type: 'chunk', content });
             const buf = assistantBuffers.get(sessionKey) || '';
-            assistantBuffers.set(sessionKey, buf + payload.message.content);
+            assistantBuffers.set(sessionKey, buf + content);
         }
 
         // Forward lifecycle events (processing start/end)
@@ -317,10 +320,17 @@ function handleOpenClawMessage(msg) {
 
         // Final state: flush content and persist history
         if (payload.state === 'final') {
-            if (payload.message?.content) {
-                sendToBrowser(browserWs, { type: 'chunk', content: payload.message.content });
-                const buf = assistantBuffers.get(sessionKey) || '';
-                assistantBuffers.set(sessionKey, buf + payload.message.content);
+            // Only send final message content if nothing was already streamed
+            // (the agent events deliver chunks incrementally; re-sending here
+            // would duplicate content and payload.message.content may be an
+            // object, which renders as "[object Object]").
+            const existingBuf = assistantBuffers.get(sessionKey) || '';
+            if (!existingBuf && payload.message?.content) {
+                const content = typeof payload.message.content === 'string'
+                    ? payload.message.content
+                    : JSON.stringify(payload.message.content);
+                sendToBrowser(browserWs, { type: 'chunk', content });
+                assistantBuffers.set(sessionKey, content);
             }
 
             sendToBrowser(browserWs, { type: 'final' });
