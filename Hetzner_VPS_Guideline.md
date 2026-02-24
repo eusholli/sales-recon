@@ -266,8 +266,8 @@ Required variables:
 ```bash
 # OpenClaw
 OPENCLAW_GATEWAY_TOKEN="<your-token>"       # Shared secret between ws-proxy and OpenClaw
-OPENCLAW_CONFIG_DIR=/root/.openclaw          # Host path for persistent OpenClaw config
-OPENCLAW_WORKSPACE_DIR=/root/.openclaw/workspace  # Host path for persistent workspace
+OPENCLAW_CONFIG_DIR=/opt/sales-recon-data/openclaw          # Host path for persistent OpenClaw config
+OPENCLAW_WORKSPACE_DIR=/opt/sales-recon-data/openclaw/workspace  # Host path for persistent workspace
 OPENCLAW_GATEWAY_PORT=50045
 OPENCLAW_BRIDGE_PORT=50046
 OPENCLAW_GATEWAY_BIND=lan
@@ -293,7 +293,7 @@ Lock down the file permissions:
 chmod 600 .env
 ```
 
-> **Note:** On your local Mac, `OPENCLAW_CONFIG_DIR` points to `/Users/yourname/.openclaw`. On the production server, it should point to `/root/.openclaw` (or the deploy user's home directory).
+> **Note:** On your local Mac, `OPENCLAW_CONFIG_DIR` points to `/Users/yourname/.openclaw`. On the production server, it points to `/opt/sales-recon-data/openclaw` — a shared location accessible by UID 1000 (the `node` user inside Docker containers).
 
 ### 5.3 Understand the Docker Compose Files
 
@@ -478,9 +478,9 @@ Archive these items regularly:
 
 | Item | Path (on server) | Purpose |
 |---|---|---|
-| OpenClaw config | `/root/.openclaw/openclaw.json` | Agent configs, model settings |
-| MCPorter config | `/root/.openclaw/mcporter.json` | MCP server registrations |
-| Workspace data | `/root/.openclaw/workspace/` | Agent workspace, sessions |
+| OpenClaw config | `/opt/sales-recon-data/openclaw/openclaw.json` | Agent configs, model settings |
+| MCPorter config | `/opt/sales-recon-data/openclaw/mcporter.json` | MCP server registrations |
+| Workspace data | `/opt/sales-recon-data/openclaw/workspace/` | Agent workspace, sessions |
 | ws-proxy identity | `/opt/sales-recon/ws-proxy/data/device.identity.json` | Device keypair (must persist) |
 | Environment vars | `/opt/sales-recon/.env` | All API keys and tokens |
 | SSL certificates | `/opt/traefik-global/letsencrypt/acme.json` | Let's Encrypt certs |
@@ -489,7 +489,7 @@ Archive these items regularly:
 # Quick backup script
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 tar -czf "sales-recon-backup-${TIMESTAMP}.tar.gz" \
-  /root/.openclaw/ \
+  /opt/sales-recon-data/openclaw/ \
   /opt/sales-recon/.env \
   /opt/sales-recon/ws-proxy/data/ \
   --exclude='*/node_modules' \
