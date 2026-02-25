@@ -138,6 +138,13 @@ export default function ChatInterface() {
                         } else if (data.type === "final") {
                             setIsWaitingForResponse(false);
                             setStatusMessage(null);
+                        } else if (data.type === "user-message") {
+                            setMessages((prev) => [
+                                ...prev,
+                                { role: "user", content: data.content, id: `broadcast-${Date.now()}` }
+                            ]);
+                            setIsWaitingForResponse(true);
+                            setStatusMessage("Processing…");
                         } else if (data.type === "error") {
                             setError(data.message);
                             setIsWaitingForResponse(false);

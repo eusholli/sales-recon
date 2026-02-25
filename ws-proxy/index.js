@@ -45,7 +45,7 @@ const MAX_RECONNECT_DELAY = 30000;
 
 // Maps browser WebSocket -> session info
 const browserSessions = new Map();
-// Maps sessionKey -> browser WebSocket
+// Maps sessionKey -> Set<WebSocket>
 const sessionToBrowser = new Map();
 // Maps request ID -> { browserWs, sessionKey }
 const pendingRequests = new Map();
@@ -238,60 +238,61 @@ function handleOpenClawMessage(msg) {
         const payload = msg.payload || {};
         const rawSessionKey = payload.sessionKey;
         const sessionKey = resolveSessionKey(rawSessionKey);
-        const browserWs = sessionToBrowser.get(sessionKey);
+        const browserWsSet = sessionToBrowser.get(sessionKey);
+        const hasClients = browserWsSet && browserWsSet.size > 0;
 
-        console.log(`[ws-proxy] Agent event: stream=${payload.stream}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, browserFound=${!!browserWs}`);
+        console.log(`[ws-proxy] Agent event: stream=${payload.stream}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, clientsFound=${hasClients}`);
 
         // Capture assistant content from stream
-        if (browserWs && payload.stream === 'assistant' && payload.data?.delta) {
-            console.log(`[ws-proxy] -> Browser: chunk (${payload.data.delta.length} chars)`);
-            sendToBrowser(browserWs, { type: 'chunk', content: payload.data.delta });
+        if (hasClients && payload.stream === 'assistant' && payload.data?.delta) {
+            console.log(`[ws-proxy] -> Browsers for session: chunk (${payload.data.delta.length} chars)`);
+            broadcastToSession(sessionKey, { type: 'chunk', content: payload.data.delta });
             // Buffer for history
             const buf = assistantBuffers.get(sessionKey) || '';
             assistantBuffers.set(sessionKey, buf + payload.data.delta);
         }
 
         // Also capture non-streaming assistant content (just in case)
-        if (browserWs && payload.message?.role === 'assistant' && payload.message?.content) {
+        if (hasClients && payload.message?.role === 'assistant' && payload.message?.content) {
             const content = typeof payload.message.content === 'string'
                 ? payload.message.content
                 : JSON.stringify(payload.message.content);
-            sendToBrowser(browserWs, { type: 'chunk', content });
+            broadcastToSession(sessionKey, { type: 'chunk', content });
             const buf = assistantBuffers.get(sessionKey) || '';
             assistantBuffers.set(sessionKey, buf + content);
         }
 
         // Forward lifecycle events (processing start/end)
-        if (browserWs && payload.stream === 'lifecycle') {
+        if (hasClients && payload.stream === 'lifecycle') {
             if (payload.data?.phase === 'start') {
-                sendToBrowser(browserWs, { type: 'status', content: 'Processing…' });
+                broadcastToSession(sessionKey, { type: 'status', content: 'Processing…' });
             }
             // 'end' phase is handled by the chat 'final' event
         }
 
         // Forward status updates (e.g. "Searching the web…", "Analyzing…")
-        if (browserWs && payload.stream === 'status') {
+        if (hasClients && payload.stream === 'status') {
             const statusText = payload.data?.delta || payload.data?.status || payload.data?.message || '';
             if (statusText) {
-                sendToBrowser(browserWs, { type: 'status', content: statusText });
+                broadcastToSession(sessionKey, { type: 'status', content: statusText });
             }
         }
 
         // Forward thinking/reasoning stream
-        if (browserWs && payload.stream === 'thinking') {
+        if (hasClients && payload.stream === 'thinking') {
             const thinkingText = payload.data?.delta || '';
             if (thinkingText) {
-                sendToBrowser(browserWs, { type: 'thinking', content: thinkingText });
+                broadcastToSession(sessionKey, { type: 'thinking', content: thinkingText });
             }
         }
 
         // Forward tool invocations
-        if (browserWs && payload.stream === 'tool') {
-            sendToBrowser(browserWs, { type: 'tool', data: payload.data });
+        if (hasClients && payload.stream === 'tool') {
+            broadcastToSession(sessionKey, { type: 'tool', data: payload.data });
         }
 
         // Log any other streams we haven't handled for discovery
-        if (browserWs && payload.stream && !['assistant', 'lifecycle', 'status', 'thinking', 'tool'].includes(payload.stream)) {
+        if (hasClients && payload.stream && !['assistant', 'lifecycle', 'status', 'thinking', 'tool'].includes(payload.stream)) {
             if (process.env.DEBUG === 'true') {
                 console.log(`[ws-proxy] Unhandled agent stream '${payload.stream}':`, JSON.stringify(payload.data));
             }
@@ -305,35 +306,38 @@ function handleOpenClawMessage(msg) {
         const payload = msg.payload || {};
         const rawSessionKey = payload.sessionKey;
         const sessionKey = resolveSessionKey(rawSessionKey);
-        const browserWs = sessionToBrowser.get(sessionKey);
+        const browserWsSet = sessionToBrowser.get(sessionKey);
+        const hasClients = browserWsSet && browserWsSet.size > 0;
 
-        console.log(`[ws-proxy] Chat event: state=${payload.state}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, browserFound=${!!browserWs}`);
+        console.log(`[ws-proxy] Chat event: state=${payload.state}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, clientsFound=${hasClients}`);
 
-        if (!browserWs) {
+        if (!hasClients) {
             return;
         }
 
         // Forward non-final state changes as status updates
         if (payload.state && payload.state !== 'final') {
-            sendToBrowser(browserWs, { type: 'status', content: payload.state });
+            broadcastToSession(sessionKey, { type: 'status', content: payload.state });
         }
 
         // Final state: flush content and persist history
         if (payload.state === 'final') {
             // Only send final message content if nothing was already streamed
-            // (the agent events deliver chunks incrementally; re-sending here
-            // would duplicate content and payload.message.content may be an
-            // object, which renders as "[object Object]").
+            // Ignore messages that are echoing the "user" role's prompt
+            if (payload.message && payload.message.role !== 'assistant') {
+                return;
+            }
+
             const existingBuf = assistantBuffers.get(sessionKey) || '';
             if (!existingBuf && payload.message?.content) {
                 const content = typeof payload.message.content === 'string'
                     ? payload.message.content
                     : JSON.stringify(payload.message.content);
-                sendToBrowser(browserWs, { type: 'chunk', content });
+                broadcastToSession(sessionKey, { type: 'chunk', content });
                 assistantBuffers.set(sessionKey, content);
             }
 
-            sendToBrowser(browserWs, { type: 'final' });
+            broadcastToSession(sessionKey, { type: 'final' });
 
             // Persist the complete assistant response to history
             const userId = findUserIdForSession(sessionKey);
@@ -430,15 +434,14 @@ wss.on('connection', async (ws, req) => {
     const sessionKey = `user-${userId.toLowerCase()}`;
     console.log(`[ws-proxy] Browser connected, user: ${userId}, sessionKey: ${sessionKey}`);
 
-    // If this user already has an active connection, close the old one
-    const existingWs = sessionToBrowser.get(sessionKey);
-    if (existingWs && existingWs !== ws && existingWs.readyState === WebSocket.OPEN) {
-        console.log(`[ws-proxy] Closing stale connection for ${sessionKey}`);
-        existingWs.close(1000, 'Replaced by new connection');
-    }
-
     browserSessions.set(ws, { sessionKey, userId });
-    sessionToBrowser.set(sessionKey, ws);
+
+    let wsSet = sessionToBrowser.get(sessionKey);
+    if (!wsSet) {
+        wsSet = new Set();
+        sessionToBrowser.set(sessionKey, wsSet);
+    }
+    wsSet.add(ws);
 
     // Send connection confirmation
     sendToBrowser(ws, { type: 'connected', sessionKey, userId });
@@ -458,9 +461,12 @@ wss.on('connection', async (ws, req) => {
 
     ws.on('close', (code, reason) => {
         console.log(`[ws-proxy] Browser disconnected: ${sessionKey} Code: ${code} Reason: ${reason}`);
-        // Only clean up if this WS is still the active one for this session
-        if (sessionToBrowser.get(sessionKey) === ws) {
-            sessionToBrowser.delete(sessionKey);
+        const wsSet = sessionToBrowser.get(sessionKey);
+        if (wsSet) {
+            wsSet.delete(ws);
+            if (wsSet.size === 0) {
+                sessionToBrowser.delete(sessionKey);
+            }
         }
         browserSessions.delete(ws);
     });
@@ -486,6 +492,20 @@ function handleBrowserMessage(ws, msg) {
             content: msg.content,
             timestamp: Date.now(),
         });
+
+        // Broadcast the user's message to any *other* browser windows for this user
+        const wsSet = sessionToBrowser.get(session.sessionKey);
+        if (wsSet) {
+            let broadcastCount = 0;
+            for (const otherWs of wsSet) {
+                if (otherWs !== ws) {
+                    sendToBrowser(otherWs, { type: 'user-message', content: msg.content });
+                    broadcastCount++;
+                }
+            }
+            console.log(`[ws-proxy] Broadcasted user-message to ${broadcastCount} other browser(s)`);
+        }
+
         sendToOpenClaw(ws, session.sessionKey, msg.content, msg.entityType, msg.entityName);
     } else {
         sendToBrowser(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
@@ -495,6 +515,15 @@ function handleBrowserMessage(ws, msg) {
 function sendToBrowser(ws, msg) {
     if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(msg));
+    }
+}
+
+function broadcastToSession(sessionKey, msg) {
+    const wsSet = sessionToBrowser.get(sessionKey);
+    if (wsSet) {
+        for (const ws of wsSet) {
+            sendToBrowser(ws, msg);
+        }
     }
 }
 

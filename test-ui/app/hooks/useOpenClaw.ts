@@ -99,7 +99,17 @@ export function useOpenClaw({
                     }
                 }
 
-                // 4. Error
+                // 4. User sent a message from another browser
+                if (data.type === 'user-message') {
+                    setMessages((prev) => [
+                        ...prev,
+                        { role: 'user', content: data.content }
+                    ]);
+                    setIsLoading(true);
+                    currentResponseRef.current = ''; // Reset for new turn
+                }
+
+                // 5. Error
                 if (data.type === 'error') {
                     setMessages((prev) => [
                         ...prev,
