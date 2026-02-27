@@ -51,6 +51,8 @@ const sessionToBrowser = new Map();
 const pendingRequests = new Map();
 // Buffer for accumulating assistant response per session
 const assistantBuffers = new Map();
+// Parser state for thinking tags (stream=assistant)
+const sessionParsingState = new Map();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chat History Persistence
@@ -176,7 +178,7 @@ function handleOpenClawMessage(msg) {
                 },
                 role,
                 scopes,
-                caps: [],
+                caps: ['tool-events'],
                 auth: { token: OPENCLAW_TOKEN },
                 device: {
                     id: deviceIdentity.deviceId,
@@ -245,11 +247,59 @@ function handleOpenClawMessage(msg) {
 
         // Capture assistant content from stream
         if (hasClients && payload.stream === 'assistant' && payload.data?.delta) {
-            console.log(`[ws-proxy] -> Browsers for session: chunk (${payload.data.delta.length} chars)`);
-            broadcastToSession(sessionKey, { type: 'chunk', content: payload.data.delta });
+            const delta = payload.data.delta;
+            console.log(`[ws-proxy] -> Browsers for session: chunk (${delta.length} chars)`);
+
             // Buffer for history
             const buf = assistantBuffers.get(sessionKey) || '';
-            assistantBuffers.set(sessionKey, buf + payload.data.delta);
+            assistantBuffers.set(sessionKey, buf + delta);
+
+            let state = sessionParsingState.get(sessionKey);
+            if (!state) {
+                state = { isThinking: false, buffer: '' };
+                sessionParsingState.set(sessionKey, state);
+            }
+            state.buffer += delta;
+
+            while (state.buffer.length > 0) {
+                if (!state.isThinking) {
+                    const matchStart = state.buffer.match(/<(?:think|thinking)[^>]*>/i);
+                    if (matchStart) {
+                        const before = state.buffer.substring(0, matchStart.index);
+                        if (before) broadcastToSession(sessionKey, { type: 'chunk', content: before });
+                        state.isThinking = true;
+                        state.buffer = state.buffer.substring(matchStart.index + matchStart[0].length);
+                        continue;
+                    }
+                    const partialMatch = state.buffer.match(/<[^>]*$/);
+                    if (partialMatch) {
+                        const before = state.buffer.substring(0, partialMatch.index);
+                        if (before) broadcastToSession(sessionKey, { type: 'chunk', content: before });
+                        state.buffer = state.buffer.substring(partialMatch.index);
+                        break;
+                    }
+                    broadcastToSession(sessionKey, { type: 'chunk', content: state.buffer });
+                    state.buffer = '';
+                } else {
+                    const matchEnd = state.buffer.match(/<\/(?:think|thinking)>/i);
+                    if (matchEnd) {
+                        const before = state.buffer.substring(0, matchEnd.index);
+                        if (before) broadcastToSession(sessionKey, { type: 'thinking', content: before });
+                        state.isThinking = false;
+                        state.buffer = state.buffer.substring(matchEnd.index + matchEnd[0].length);
+                        continue;
+                    }
+                    const partialMatch = state.buffer.match(/<[^>]*$/);
+                    if (partialMatch) {
+                        const before = state.buffer.substring(0, partialMatch.index);
+                        if (before) broadcastToSession(sessionKey, { type: 'thinking', content: before });
+                        state.buffer = state.buffer.substring(partialMatch.index);
+                        break;
+                    }
+                    broadcastToSession(sessionKey, { type: 'thinking', content: state.buffer });
+                    state.buffer = '';
+                }
+            }
         }
 
         // Also capture non-streaming assistant content (just in case)
@@ -315,8 +365,8 @@ function handleOpenClawMessage(msg) {
             return;
         }
 
-        // Forward non-final state changes as status updates
-        if (payload.state && payload.state !== 'final') {
+        // Forward non-final state changes as status updates (ignore delta)
+        if (payload.state && payload.state !== 'final' && payload.state !== 'delta') {
             broadcastToSession(sessionKey, { type: 'status', content: payload.state });
         }
 
@@ -358,6 +408,7 @@ function handleOpenClawMessage(msg) {
                     break;
                 }
             }
+            sessionParsingState.delete(sessionKey);
         }
     }
 
