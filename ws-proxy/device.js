@@ -98,14 +98,31 @@ export function loadOrCreateDeviceIdentity(dir) {
 // Payload building and signing (matches OpenClaw device-auth.ts v2 format)
 // ─────────────────────────────────────────────────────────────────────────────
 
+function toLowerAscii(input) {
+    return input.replace(/[A-Z]/g, (char) => String.fromCharCode(char.charCodeAt(0) + 32));
+}
+
+export function normalizeDeviceMetadataForAuth(value) {
+    if (typeof value !== "string") {
+        return "";
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return "";
+    }
+    return toLowerAscii(trimmed);
+}
+
 /**
  * Build the canonical payload string that the Gateway expects to verify.
- * Format: "v2|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce"
+ * Format: "v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily"
  */
-export function buildDeviceAuthPayload({ deviceId, clientId, clientMode, role, scopes, signedAtMs, token, nonce }) {
+export function buildDeviceAuthPayloadV3({ deviceId, clientId, clientMode, role, scopes, signedAtMs, token, nonce, platform, deviceFamily }) {
     const scopeStr = scopes.join(',');
     const tokenStr = token ?? '';
-    return ['v2', deviceId, clientId, clientMode, role, scopeStr, String(signedAtMs), tokenStr, nonce].join('|');
+    const platformStr = normalizeDeviceMetadataForAuth(platform);
+    const deviceFamilyStr = normalizeDeviceMetadataForAuth(deviceFamily);
+    return ['v3', deviceId, clientId, clientMode, role, scopeStr, String(signedAtMs), tokenStr, nonce, platformStr, deviceFamilyStr].join('|');
 }
 
 /**

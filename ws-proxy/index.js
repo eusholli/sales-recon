@@ -12,7 +12,7 @@ import { createClerkClient, verifyToken } from '@clerk/backend';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadOrCreateDeviceIdentity, buildDeviceAuthPayload, signDevicePayload, publicKeyToBase64Url } from './device.js';
+import { loadOrCreateDeviceIdentity, buildDeviceAuthPayloadV3, signDevicePayload, publicKeyToBase64Url } from './device.js';
 
 const clerkClient = createClerkClient({
     secretKey: process.env.CLERK_SECRET_KEY,
@@ -149,8 +149,11 @@ function handleOpenClawMessage(msg) {
         const clientId = 'gateway-client';
         const clientMode = 'backend';
 
-        // Build and sign the device auth payload (v2 format)
-        const authPayload = buildDeviceAuthPayload({
+        const platform = 'linux';
+        const deviceFamily = 'server';
+
+        // Build and sign the device auth payload (v3 format)
+        const authPayload = buildDeviceAuthPayloadV3({
             deviceId: deviceIdentity.deviceId,
             clientId,
             clientMode,
@@ -159,6 +162,8 @@ function handleOpenClawMessage(msg) {
             signedAtMs: signedAt,
             token: OPENCLAW_TOKEN,
             nonce,
+            platform,
+            deviceFamily,
         });
         const signature = signDevicePayload(deviceIdentity.privateKeyPem, authPayload);
 
@@ -173,7 +178,8 @@ function handleOpenClawMessage(msg) {
                     id: clientId,
                     displayName: 'Sales-Recon-Proxy-Dallas',
                     version: '1.0.0',
-                    platform: 'linux',
+                    platform,
+                    deviceFamily,
                     mode: clientMode,
                 },
                 role,
