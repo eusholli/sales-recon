@@ -29,6 +29,11 @@ USER node
 # Install playwright browsers
 RUN playwright install chromium
 
+# Symlink Playwright's Chromium to a standard path so OpenClaw's browser tool can find it
+USER root
+RUN find /home/node/.cache/ms-playwright -name "chrome" -type f | head -1 | xargs -I{} ln -sf {} /usr/local/bin/chromium-browser
+USER node
+
 # Persist mcporter config
 # Ensure /app/config exists and link mcporter.json to the persistent volume
 RUN mkdir -p /app/config && \
