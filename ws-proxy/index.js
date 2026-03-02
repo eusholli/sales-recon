@@ -88,6 +88,27 @@ function sendHistory(ws, userId) {
     }
 }
 
+function archiveAndResetHistory(userId) {
+    const historyPath = getHistoryPath(userId);
+    try {
+        const data = fs.readFileSync(historyPath, 'utf8');
+        const history = JSON.parse(data);
+        if (history.length > 0) {
+            // Build a filesystem-safe ISO timestamp: 2026-03-02T04-35-00
+            const now = new Date();
+            const ts = now.toISOString().replace(/:/g, '-').replace(/\..*$/, '');
+            const archivePath = path.join(HISTORY_DIR, `${userId}_${ts}.json`);
+            fs.renameSync(historyPath, archivePath);
+            console.log(`[ws-proxy] Archived history for ${userId} -> ${archivePath}`);
+        }
+    } catch {
+        // No history file or empty — nothing to archive
+    }
+    // Create a fresh empty history file
+    fs.writeFileSync(historyPath, '[]', 'utf8');
+    console.log(`[ws-proxy] Created fresh history for ${userId}`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenClaw Connection
 // ─────────────────────────────────────────────────────────────────────────────
@@ -542,7 +563,22 @@ function handleBrowserMessage(ws, msg) {
         return;
     }
 
-    if (msg.type === 'message') {
+    if (msg.type === 'new-session') {
+        // Archive existing history and create a fresh empty one
+        archiveAndResetHistory(session.userId);
+
+        // Send /new to OpenClaw to start a fresh conversation thread
+        sendToOpenClaw(ws, session.sessionKey, '/new');
+
+        // Notify all browser windows for this user to clear their UI
+        const wsSet = sessionToBrowser.get(session.sessionKey);
+        if (wsSet) {
+            for (const browserWs of wsSet) {
+                sendToBrowser(browserWs, { type: 'session-cleared' });
+            }
+        }
+        console.log(`[ws-proxy] New session started for user ${session.userId}`);
+    } else if (msg.type === 'message') {
         // Persist user message to history
         appendToHistory(session.userId, {
             role: 'user',
