@@ -16,11 +16,12 @@ services:
       NPM_CONFIG_PREFIX: /home/node/.npm-global
       PATH: /home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       XAI_API_KEY: ${XAI_API_KEY}
-      TAVILY_API_KEY: ${TAVILY_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY}
+      BRAVE_API_KEY: ${BRAVE_API_KEY}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
       DEBUG: "openclaw:*"
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
