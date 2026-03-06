@@ -1,4 +1,4 @@
-FROM ghcr.io/openclaw/openclaw:2026.2.26
+FROM ghcr.io/openclaw/openclaw:2026.3.2
 
 # Switch to root to install dependencies
 USER root
