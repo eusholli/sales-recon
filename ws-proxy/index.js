@@ -492,7 +492,7 @@ wss.on('connection', async (ws, req) => {
     }
 
     let userId = null;
-    let authError = null;
+    let authErrors = [];
 
     const secretKeysString = process.env.WS_PROXY_CLERK_SECRET_KEYS || process.env.CLERK_SECRET_KEY || '';
     const secretKeys = secretKeysString.split(',').map(k => k.trim()).filter(Boolean);
@@ -510,12 +510,12 @@ wss.on('connection', async (ws, req) => {
             console.log(`[ws-proxy] User authenticated: ${userId}`);
             break;
         } catch (err) {
-            authError = err;
+            authErrors.push(err.message);
         }
     }
 
     if (!userId) {
-        console.error('[ws-proxy] Connection rejected: Invalid token', authError ? authError.message : 'No valid key found');
+        console.error('[ws-proxy] Connection rejected: Invalid token. Errors:', authErrors.join(' | '));
         ws.close(1008, 'Invalid authentication token');
         return;
     }
