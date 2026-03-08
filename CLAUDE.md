@@ -24,7 +24,7 @@ Browser → Traefik (prod only) → ws-proxy → OpenClaw (AI gateway)
 
 **`ws-proxy`** (`ws-proxy/`)
 - Node.js WebSocket bridge (ESM, port 8080)
-- Authenticates browser clients using Clerk JWT (`@clerk/backend` `verifyToken`)
+- Authenticates browser clients using Clerk JWT (`@clerk/backend` `verifyToken`). Supports multiple Clerk authentication instances via comma-separated `WS_PROXY_CLERK_SECRET_KEYS`.
 - Routes browser sessions to OpenClaw via `ws://openclaw:50045` with token-only auth
 - Role: `operator` (using operator scopes for chat messages)
 - **Device identity removed**: Previously used Ed25519 pairing, now relies solely on `OPENCLAW_TOKEN` for proxy-to-gateway auth (per OpenClaw programmatic connect protocol)
@@ -102,7 +102,8 @@ Key variables required in `.env` (gitignored):
 - `OPENCLAW_GATEWAY_TOKEN` — Shared secret between ws-proxy and OpenClaw
 - `OPENCLAW_CONFIG_DIR` — Host path for persistent OpenClaw config volume
 - `OPENCLAW_WORKSPACE_DIR` — Host path for persistent workspace volume
-- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` — Clerk auth (used by ws-proxy and test-ui)
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` — Clerk auth (used by test-ui and ws-proxy)
+- `WS_PROXY_CLERK_SECRET_KEYS` — Comma-separated list of additional Clerk secret keys (used by ws-proxy to support multiple auths)
 - `TAVILY_API_KEY` — Enables Tavily web search MCP skill
 - AI API keys: `XAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, etc.
 

@@ -286,6 +286,7 @@ ANTHROPIC_API_KEY="<your-key>"
 # Clerk Authentication (used by ws-proxy to verify browser JWTs)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="<your-key>"
 CLERK_SECRET_KEY="<your-key>"
+WS_PROXY_CLERK_SECRET_KEYS="<your-key>,<another-key>"
 ```
 
 Lock down the file permissions:

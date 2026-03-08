@@ -119,7 +119,8 @@ Create a `.env` file in the project root (gitignored). Key variables:
 | `OPENCLAW_CONFIG_DIR` | Host path for persistent OpenClaw config volume |
 | `OPENCLAW_WORKSPACE_DIR` | Host path for persistent workspace volume |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (used by test-ui) |
-| `CLERK_SECRET_KEY` | Clerk secret key (used by ws-proxy) |
+| `CLERK_SECRET_KEY` | Clerk secret key (used by ws-proxy and test-ui) |
+| `WS_PROXY_CLERK_SECRET_KEYS` | Comma-separated list of Clerk secret keys (used by ws-proxy for multi-auth) |
 | `TAVILY_API_KEY` | Enables the Tavily web search MCP skill |
 | `XAI_API_KEY` | xAI / Grok API key |
 | `GEMINI_API_KEY` | Google Gemini API key |

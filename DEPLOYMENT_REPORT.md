@@ -160,8 +160,8 @@ The ws-proxy container receives ALL environment variables including API keys it 
      environment:
        OPENCLAW_URL: "ws://sales-recon-openclaw:18789"
        OPENCLAW_TOKEN: "${OPENCLAW_GATEWAY_TOKEN}"
-       CLERK_PUBLISHABLE_KEY: "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}"
-+      CLERK_SECRET_KEY: "${CLERK_SECRET_KEY}"
+       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEYS: "${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEYS}"
++      WS_PROXY_CLERK_SECRET_KEYS: "${WS_PROXY_CLERK_SECRET_KEYS}"
 ```
 
 ### 3.3 Hetzner Cloud Firewall Rules
