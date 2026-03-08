@@ -8,16 +8,11 @@
 
 import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
-import { createClerkClient, verifyToken } from '@clerk/backend';
+import { verifyToken } from '@clerk/backend';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateDeviceIdentity, buildDeviceAuthPayloadV3, signDevicePayload, publicKeyToBase64Url } from './device.js';
-
-const clerkClient = createClerkClient({
-    secretKey: process.env.CLERK_SECRET_KEY,
-    publishableKey: process.env.CLERK_PUBLISHABLE_KEY
-});
 
 const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://openclaw:50045';
 const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN;
@@ -497,12 +492,30 @@ wss.on('connection', async (ws, req) => {
     }
 
     let userId = null;
-    try {
-        const verifyResult = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
-        userId = verifyResult.sub;
-        console.log(`[ws-proxy] User authenticated: ${userId}`);
-    } catch (err) {
-        console.error('[ws-proxy] Connection rejected: Invalid token', err.message);
+    let authError = null;
+
+    const secretKeysString = process.env.WS_PROXY_CLERK_SECRET_KEYS || process.env.CLERK_SECRET_KEY || '';
+    const secretKeys = secretKeysString.split(',').map(k => k.trim()).filter(Boolean);
+
+    if (secretKeys.length === 0) {
+        console.error('[ws-proxy] Connection rejected: No Clerk secret keys configured');
+        ws.close(1011, 'Server configuration error');
+        return;
+    }
+
+    for (const secretKey of secretKeys) {
+        try {
+            const verifyResult = await verifyToken(token, { secretKey });
+            userId = verifyResult.sub;
+            console.log(`[ws-proxy] User authenticated: ${userId}`);
+            break;
+        } catch (err) {
+            authError = err;
+        }
+    }
+
+    if (!userId) {
+        console.error('[ws-proxy] Connection rejected: Invalid token', authError ? authError.message : 'No valid key found');
         ws.close(1008, 'Invalid authentication token');
         return;
     }
