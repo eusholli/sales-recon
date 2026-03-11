@@ -27,7 +27,7 @@ Browser → Traefik (prod only) → ws-proxy → OpenClaw (AI gateway)
 - Authenticates browser clients using Clerk JWT (`@clerk/backend` `verifyToken`). Supports multiple Clerk authentication instances via comma-separated `WS_PROXY_CLERK_SECRET_KEYS`.
 - Routes browser sessions to OpenClaw via `ws://openclaw:50045` with token-only auth
 - Role: `operator` (using operator scopes for chat messages)
-- **Device identity removed**: Previously used Ed25519 pairing, now relies solely on `OPENCLAW_TOKEN` for proxy-to-gateway auth (per OpenClaw programmatic connect protocol)
+- Uses Ed25519 device identity (`ws-proxy/data/device.json`) for device auth alongside `OPENCLAW_TOKEN`
 
 **`traefik-global/`** — Global reverse proxy, runs as a separate stack.
 
@@ -86,6 +86,23 @@ npm run build   # Production build
 npm run lint    # ESLint
 ```
 
+### Production Deployment Script
+
+```bash
+# Convenience wrapper for prod deployment (runs from repo root)
+./deploy-prod.sh
+```
+
+### Market Intelligence Cron Jobs
+
+```bash
+# Register/refresh scheduled intelligence runs (Tuesday + Thursday 06:00 CT)
+# Requires CRON_EVENT_PLANNER_DNS and CRON_SECRET_KEY in .env
+python3 event-planner-cron.py
+```
+
+Registers cron jobs inside the running `sales-recon-openclaw` container via `openclaw.mjs cron add`. Jobs are idempotent — re-running removes old jobs by name prefix before re-adding.
+
 ### OpenClaw / MCPorter (inside container)
 
 ```bash
@@ -105,6 +122,8 @@ Key variables required in `.env` (gitignored):
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` — Clerk auth (used by test-ui and ws-proxy)
 - `WS_PROXY_CLERK_SECRET_KEYS` — Comma-separated list of additional Clerk secret keys (used by ws-proxy to support multiple auths)
 - `TAVILY_API_KEY` — Enables Tavily web search MCP skill
+- `CRON_EVENT_PLANNER_DNS` — DNS/URL for the event planner endpoint; enables cron job registration in `deploy-prod.sh` and `event-planner-cron.py`
+- `CRON_SECRET_KEY` — Secret key passed to event planner cron jobs for authenticated requests
 - AI API keys: `XAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, etc.
 
 ## Key Implementation Details
@@ -117,7 +136,7 @@ Key variables required in `.env` (gitignored):
 ## Production Deployment Notes
 
 - Recommended server: Hetzner CX32 (3 vCPU, 8GB RAM) — Chromium/Playwright requires 8GB to avoid OOM kills
-- `ws-proxy/data/device.identity.json` must be preserved across deployments; include in backup strategy
+- `ws-proxy/data/device.json` contains the Ed25519 private key — never commit to git. Back it up securely outside the repo (e.g., encrypted secret store). If lost, a new keypair is auto-generated but the old device registration in OpenClaw will be orphaned.
 - `docker-compose.override.yml` is gitignored — never present on the production server
 - Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml` explicitly on the server
 - Hetzner cloud firewall: allow inbound TCP 22 (your IP only), 80, 443; drop all else
