@@ -19,7 +19,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 echo "Waiting for sales-recon-openclaw to be healthy..."
 MAX_WAIT=60
 WAIT=0
-until docker compose exec -T sales-recon-openclaw node dist/index.js health --token "$OPENCLAW_GATEWAY_TOKEN" > /dev/null 2>&1; do
+until docker compose exec -T sales-recon-openclaw node dist/index.js health > /dev/null 2>&1; do
     if [ "$WAIT" -ge "$MAX_WAIT" ]; then
         echo "ERROR: sales-recon-openclaw did not become healthy within ${MAX_WAIT}s. Cron jobs NOT updated."
         exit 1
