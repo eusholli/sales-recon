@@ -6,6 +6,7 @@ services:
       - "traefik.http.routers.control-prod.rule=Host(`control.maximh.us`)"
       - "traefik.http.routers.control-prod.entrypoints=websecure"
       - "traefik.http.routers.control-prod.tls.certresolver=myresolver"
+      - "traefik.http.routers.control-prod.service=control"
       - "traefik.http.services.control.loadbalancer.server.port=50045"
     networks:
       - webproxy
