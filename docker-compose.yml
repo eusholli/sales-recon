@@ -49,6 +49,8 @@ services:
       OPENCLAW_TOKEN: "${OPENCLAW_GATEWAY_TOKEN}"
       WS_PROXY_CLERK_SECRET_KEYS: "${WS_PROXY_CLERK_SECRET_KEYS}"
       DEBUG: "${DEBUG:-false}"
+      WEBAPP_URL: "${WEBAPP_URL:-http://host.docker.internal:3000}"
+      CRON_SECRET_KEY: "${CRON_SECRET_KEY}"
     volumes:
       - ./ws-proxy/data:/app/data
     networks:

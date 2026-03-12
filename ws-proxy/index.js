@@ -69,9 +69,18 @@ function loadHistory(userId) {
     }
 }
 
+// Strip <think>/<thinking> blocks so history content matches what was rendered
+// in the browser (ReactMarkdown drops raw HTML tags and their content).
+function stripThinkingBlocks(content) {
+    return content.replace(/<(?:think|thinking)[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi, '').trim();
+}
+
 function appendToHistory(userId, message) {
     const history = loadHistory(userId);
-    history.push(message);
+    const entry = message.role === 'assistant' && message.content
+        ? { ...message, content: stripThinkingBlocks(message.content) }
+        : message;
+    history.push(entry);
     fs.writeFileSync(getHistoryPath(userId), JSON.stringify(history, null, 2), 'utf8');
 }
 
@@ -268,70 +277,77 @@ function handleOpenClawMessage(msg) {
         console.log(`[ws-proxy] Agent event: stream=${payload.stream}, rawKey=${rawSessionKey}, resolvedKey=${sessionKey}, clientsFound=${hasClients}`);
 
         // Capture assistant content from stream
-        if (hasClients && payload.stream === 'assistant' && payload.data?.delta) {
+        // Buffer accumulation is unconditional (independent of hasClients) so history
+        // is always saved even when the browser is temporarily disconnected.
+        if (payload.stream === 'assistant' && payload.data?.delta) {
             const delta = payload.data.delta;
-            console.log(`[ws-proxy] -> Browsers for session: chunk (${delta.length} chars)`);
 
-            // Buffer for history
+            // Buffer raw content for history (thinking blocks stripped at save time)
             const buf = assistantBuffers.get(sessionKey) || '';
             assistantBuffers.set(sessionKey, buf + delta);
 
-            let state = sessionParsingState.get(sessionKey);
-            if (!state) {
-                state = { isThinking: false, buffer: '' };
-                sessionParsingState.set(sessionKey, state);
-            }
-            state.buffer += delta;
+            if (hasClients) {
+                console.log(`[ws-proxy] -> Browsers for session: chunk (${delta.length} chars)`);
 
-            while (state.buffer.length > 0) {
-                if (!state.isThinking) {
-                    const matchStart = state.buffer.match(/<(?:think|thinking)[^>]*>/i);
-                    if (matchStart) {
-                        const before = state.buffer.substring(0, matchStart.index);
-                        if (before) broadcastToSession(sessionKey, { type: 'chunk', content: before });
-                        state.isThinking = true;
-                        state.buffer = state.buffer.substring(matchStart.index + matchStart[0].length);
-                        continue;
+                let state = sessionParsingState.get(sessionKey);
+                if (!state) {
+                    state = { isThinking: false, buffer: '' };
+                    sessionParsingState.set(sessionKey, state);
+                }
+                state.buffer += delta;
+
+                while (state.buffer.length > 0) {
+                    if (!state.isThinking) {
+                        const matchStart = state.buffer.match(/<(?:think|thinking)[^>]*>/i);
+                        if (matchStart) {
+                            const before = state.buffer.substring(0, matchStart.index);
+                            if (before) broadcastToSession(sessionKey, { type: 'chunk', content: before });
+                            state.isThinking = true;
+                            state.buffer = state.buffer.substring(matchStart.index + matchStart[0].length);
+                            continue;
+                        }
+                        const partialMatch = state.buffer.match(/<[^>]*$/);
+                        if (partialMatch) {
+                            const before = state.buffer.substring(0, partialMatch.index);
+                            if (before) broadcastToSession(sessionKey, { type: 'chunk', content: before });
+                            state.buffer = state.buffer.substring(partialMatch.index);
+                            break;
+                        }
+                        broadcastToSession(sessionKey, { type: 'chunk', content: state.buffer });
+                        state.buffer = '';
+                    } else {
+                        const matchEnd = state.buffer.match(/<\/(?:think|thinking)>/i);
+                        if (matchEnd) {
+                            const before = state.buffer.substring(0, matchEnd.index);
+                            if (before) broadcastToSession(sessionKey, { type: 'thinking', content: before });
+                            state.isThinking = false;
+                            state.buffer = state.buffer.substring(matchEnd.index + matchEnd[0].length);
+                            continue;
+                        }
+                        const partialMatch = state.buffer.match(/<[^>]*$/);
+                        if (partialMatch) {
+                            const before = state.buffer.substring(0, partialMatch.index);
+                            if (before) broadcastToSession(sessionKey, { type: 'thinking', content: before });
+                            state.buffer = state.buffer.substring(partialMatch.index);
+                            break;
+                        }
+                        broadcastToSession(sessionKey, { type: 'thinking', content: state.buffer });
+                        state.buffer = '';
                     }
-                    const partialMatch = state.buffer.match(/<[^>]*$/);
-                    if (partialMatch) {
-                        const before = state.buffer.substring(0, partialMatch.index);
-                        if (before) broadcastToSession(sessionKey, { type: 'chunk', content: before });
-                        state.buffer = state.buffer.substring(partialMatch.index);
-                        break;
-                    }
-                    broadcastToSession(sessionKey, { type: 'chunk', content: state.buffer });
-                    state.buffer = '';
-                } else {
-                    const matchEnd = state.buffer.match(/<\/(?:think|thinking)>/i);
-                    if (matchEnd) {
-                        const before = state.buffer.substring(0, matchEnd.index);
-                        if (before) broadcastToSession(sessionKey, { type: 'thinking', content: before });
-                        state.isThinking = false;
-                        state.buffer = state.buffer.substring(matchEnd.index + matchEnd[0].length);
-                        continue;
-                    }
-                    const partialMatch = state.buffer.match(/<[^>]*$/);
-                    if (partialMatch) {
-                        const before = state.buffer.substring(0, partialMatch.index);
-                        if (before) broadcastToSession(sessionKey, { type: 'thinking', content: before });
-                        state.buffer = state.buffer.substring(partialMatch.index);
-                        break;
-                    }
-                    broadcastToSession(sessionKey, { type: 'thinking', content: state.buffer });
-                    state.buffer = '';
                 }
             }
         }
 
         // Also capture non-streaming assistant content (just in case)
-        if (hasClients && payload.message?.role === 'assistant' && payload.message?.content) {
+        if (payload.message?.role === 'assistant' && payload.message?.content) {
             const content = typeof payload.message.content === 'string'
                 ? payload.message.content
                 : JSON.stringify(payload.message.content);
-            broadcastToSession(sessionKey, { type: 'chunk', content });
             const buf = assistantBuffers.get(sessionKey) || '';
             assistantBuffers.set(sessionKey, buf + content);
+            if (hasClients) {
+                broadcastToSession(sessionKey, { type: 'chunk', content });
+            }
         }
 
         // Forward lifecycle events (processing start/end)
@@ -449,9 +465,26 @@ function sendToOpenClaw(browserWs, sessionKey, message, entityType, entityName) 
     }
 
     const id = getNextId();
-    const fullMessage = entityType && entityName
+    const session = browserSessions.get(browserWs);
+    const sessionCtx = session?.sessionCtx ?? null;
+    const eventIdForCtx = session?.eventId ?? null;
+
+    let baseMessage = entityType && entityName
         ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}`
         : message;
+
+    // Append ActionCtx for OpenClaw to access webapp DB
+    let fullMessage = baseMessage;
+    if (sessionCtx && sessionCtx.actionToken) {
+        // Check if token needs refresh (within 30 minutes of expiry)
+        const expiresAt = sessionCtx.expiresAt ? new Date(sessionCtx.expiresAt).getTime() : 0;
+        const thirtyMinutes = 30 * 60 * 1000;
+        if (expiresAt && Date.now() > expiresAt - thirtyMinutes) {
+            console.log(`[ws-proxy] Action token expiring soon for session ${sessionKey}, refresh needed on next opportunity`);
+            // Note: async refresh not done inline; will be handled on next connection
+        }
+        fullMessage += `\n\n[ActionCtx appUrl="${sessionCtx.appUrl}" token="${sessionCtx.actionToken}" eventId="${eventIdForCtx ?? ''}" eventSlug="${sessionCtx.eventSlug ?? ''}" role="${sessionCtx.role}"]`;
+    }
 
     const payload = {
         type: 'req',
@@ -520,12 +553,45 @@ wss.on('connection', async (ws, req) => {
         return;
     }
 
+    // Exchange Clerk token for action token (for OpenClaw DB access)
+    const eventId = url.searchParams.get('eventId');
+    let sessionCtx = null;
+    const webappUrl = process.env.WEBAPP_URL;
+    const cronSecretKey = process.env.CRON_SECRET_KEY;
+    if (webappUrl && cronSecretKey) {
+        try {
+            const sessionRes = await fetch(`${webappUrl}/api/intelligence/session`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${cronSecretKey}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ clerkToken: token, eventId: eventId ?? undefined })
+            });
+            if (sessionRes.ok) {
+                const data = await sessionRes.json();
+                sessionCtx = {
+                    actionToken: data.actionToken,
+                    role: data.role,
+                    appUrl: webappUrl,
+                    eventSlug: data.eventSlug ?? null,
+                    expiresAt: data.expiresAt
+                };
+                console.log(`[ws-proxy] Action token obtained for user ${userId}, role: ${data.role}`);
+            } else {
+                console.warn(`[ws-proxy] Session init failed: ${sessionRes.status}`);
+            }
+        } catch (err) {
+            console.warn('[ws-proxy] Session init error:', err.message);
+        }
+    }
+
     // Use a deterministic, user-scoped session key so the same user
     // always resumes the same OpenClaw conversation thread.
     const sessionKey = `user-${userId.toLowerCase()}`;
     console.log(`[ws-proxy] Browser connected, user: ${userId}, sessionKey: ${sessionKey}`);
 
-    browserSessions.set(ws, { sessionKey, userId });
+    browserSessions.set(ws, { sessionKey, userId, sessionCtx, token, eventId: eventId ?? null });
 
     let wsSet = sessionToBrowser.get(sessionKey);
     if (!wsSet) {
