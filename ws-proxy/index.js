@@ -809,13 +809,13 @@ async function handleBrowserMessage(ws, msg) {
         // Expire check (10 minutes)
         if (Date.now() - action.timestamp > 10 * 60 * 1000) {
             delete pending[msg.actionId];
-            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, error: 'Action expired (>10 minutes)' });
+            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, data: { error: 'Action expired (>10 minutes)' } });
             return;
         }
         delete pending[msg.actionId];
         const token = await getValidToken(session);
         if (!token) {
-            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, error: 'No valid auth token' });
+            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, data: { error: 'No valid auth token' } });
             return;
         }
         console.log(`[ws-proxy] Executing confirmed action ${msg.actionId}: ${action.tool}`);
