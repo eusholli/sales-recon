@@ -481,19 +481,17 @@ function handleOpenClawMessage(msg) {
 
         // Final state: flush content and persist history
         if (payload.state === 'final') {
-            // Only send final message content if nothing was already streamed
-            // Ignore messages that are echoing the "user" role's prompt
-            if (payload.message && payload.message.role !== 'assistant') {
-                return;
-            }
-
-            const existingBuf = assistantBuffers.get(sessionKey) || '';
-            if (!existingBuf && payload.message?.content) {
-                const content = typeof payload.message.content === 'string'
-                    ? payload.message.content
-                    : JSON.stringify(payload.message.content);
-                broadcastToSession(sessionKey, { type: 'chunk', content });
-                assistantBuffers.set(sessionKey, content);
+            // Only send final message content if nothing was already streamed,
+            // and only if the message is from the assistant (not echoing the user's prompt)
+            if (!payload.message || payload.message.role === 'assistant') {
+                const existingBuf = assistantBuffers.get(sessionKey) || '';
+                if (!existingBuf && payload.message?.content) {
+                    const content = typeof payload.message.content === 'string'
+                        ? payload.message.content
+                        : JSON.stringify(payload.message.content);
+                    broadcastToSession(sessionKey, { type: 'chunk', content });
+                    assistantBuffers.set(sessionKey, content);
+                }
             }
 
             // Parse [PENDING_ACTION] blocks from the complete response
@@ -529,6 +527,15 @@ function handleOpenClawMessage(msg) {
                 });
                 hasPendingActions = true;
                 console.log(`[ws-proxy] Parsed [PENDING_ACTION] id=${actionId} tool=${tool} eventId=${eventId}`);
+            }
+
+            // If no content was generated and no pending actions were parsed,
+            // send a fallback message so the user isn't left with a silent empty response.
+            const currentBuf = assistantBuffers.get(sessionKey) || '';
+            if (!currentBuf && !hasPendingActions) {
+                const fallbackMsg = "I wasn't able to generate a response. Please try again.";
+                broadcastToSession(sessionKey, { type: 'chunk', content: fallbackMsg });
+                assistantBuffers.set(sessionKey, fallbackMsg);
             }
 
             broadcastToSession(sessionKey, { type: 'final' });
