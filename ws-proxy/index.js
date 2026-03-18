@@ -10,8 +10,6 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken } from '@clerk/backend';
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 import { loadOrCreateDeviceIdentity, buildDeviceAuthPayloadV3, signDevicePayload, publicKeyToBase64Url } from './device.js';
 
 const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://openclaw:50045';
@@ -52,24 +50,8 @@ const sessionParsingState = new Map();
 const sessionPendingActions = new Map();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chat History Persistence
+// Content Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-const HISTORY_DIR = path.join(DEVICE_DATA_DIR, 'history');
-fs.mkdirSync(HISTORY_DIR, { recursive: true });
-
-function getHistoryPath(userId) {
-    return path.join(HISTORY_DIR, `${userId}.json`);
-}
-
-function loadHistory(userId) {
-    try {
-        const data = fs.readFileSync(getHistoryPath(userId), 'utf8');
-        return JSON.parse(data);
-    } catch {
-        return [];
-    }
-}
 
 // Strip <think>/<thinking> blocks so history content matches what was rendered
 // in the browser (ReactMarkdown drops raw HTML tags and their content).
@@ -77,42 +59,24 @@ function stripThinkingBlocks(content) {
     return content.replace(/<(?:think|thinking)[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi, '').trim();
 }
 
-function appendToHistory(userId, message) {
-    const history = loadHistory(userId);
-    const entry = message.role === 'assistant' && message.content
-        ? { ...message, content: stripThinkingBlocks(message.content) }
-        : message;
-    history.push(entry);
-    fs.writeFileSync(getHistoryPath(userId), JSON.stringify(history, null, 2), 'utf8');
+// Extract plain text from an OpenClaw message object
+// Handles: string content, content-array [{type:'text', text}], or .text field
+function extractMessageContent(message) {
+    const content = message.content;
+    if (typeof content === 'string') return content;
+    if (Array.isArray(content)) {
+        const parts = content
+            .filter(p => p && p.type === 'text' && typeof p.text === 'string')
+            .map(p => p.text);
+        if (parts.length > 0) return parts.join('\n');
+    }
+    if (typeof message.text === 'string') return message.text;
+    return '';
 }
 
-function sendHistory(ws, userId) {
-    const history = loadHistory(userId);
-    if (history.length > 0) {
-        sendToBrowser(ws, { type: 'history', messages: history });
-        console.log(`[ws-proxy] Sent ${history.length} history messages to user ${userId}`);
-    }
-}
-
-function archiveAndResetHistory(userId) {
-    const historyPath = getHistoryPath(userId);
-    try {
-        const data = fs.readFileSync(historyPath, 'utf8');
-        const history = JSON.parse(data);
-        if (history.length > 0) {
-            // Build a filesystem-safe ISO timestamp: 2026-03-02T04-35-00
-            const now = new Date();
-            const ts = now.toISOString().replace(/:/g, '-').replace(/\..*$/, '');
-            const archivePath = path.join(HISTORY_DIR, `${userId}_${ts}.json`);
-            fs.renameSync(historyPath, archivePath);
-            console.log(`[ws-proxy] Archived history for ${userId} -> ${archivePath}`);
-        }
-    } catch {
-        // No history file or empty — nothing to archive
-    }
-    // Create a fresh empty history file
-    fs.writeFileSync(historyPath, '[]', 'utf8');
-    console.log(`[ws-proxy] Created fresh history for ${userId}`);
+// Strip [ActionCtx ...] metadata that the proxy injects into user messages
+function stripActionCtx(content) {
+    return content.replace(/\n\n\[ActionCtx[^\n]*/g, '').trim();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -307,16 +271,39 @@ function handleOpenClawMessage(msg) {
         return;
     }
 
-    // Handle chat.send response (OK acknowledgment)
+    // Handle res messages (chat.send acknowledgments and chat.history responses)
     if (msg.type === 'res' && typeof msg.id === 'string') {
         const pending = pendingRequests.get(msg.id);
         if (pending && !msg.ok) {
-            // Error response
             const error = msg.error?.message || 'Unknown error';
             sendToBrowser(pending.browserWs, { type: 'error', message: error });
             pendingRequests.delete(msg.id);
+            return;
         }
-        // OK responses are just acknowledgments; actual content comes via events
+        // Handle chat.history response
+        if (pending?.isHistoryRequest && msg.ok) {
+            const rawMessages = Array.isArray(msg.result?.messages) ? msg.result.messages : [];
+            const SILENT_REPLY = /^\s*NO_REPLY\s*$/;
+            const cleanMessages = rawMessages
+                .map(m => {
+                    const role = typeof m.role === 'string' ? m.role : 'user';
+                    let content = extractMessageContent(m);
+                    if (role === 'assistant') {
+                        content = stripThinkingBlocks(content);
+                    } else if (role === 'user') {
+                        content = stripActionCtx(content);
+                    }
+                    return { role, content, timestamp: m.timestamp ?? m.createdAt ?? Date.now() };
+                })
+                .filter(m => m.content && !SILENT_REPLY.test(m.content));
+            if (cleanMessages.length > 0) {
+                sendToBrowser(pending.browserWs, { type: 'history', messages: cleanMessages });
+                console.log(`[ws-proxy] Sent ${cleanMessages.length} history messages from OpenClaw to ${pending.sessionKey}`);
+            }
+            pendingRequests.delete(msg.id);
+            return;
+        }
+        // OK acknowledgments for chat.send — actual content comes via events
         return;
     }
 
@@ -539,17 +526,6 @@ function handleOpenClawMessage(msg) {
             }
 
             broadcastToSession(sessionKey, { type: 'final' });
-
-            // Persist the complete assistant response to history
-            const userId = findUserIdForSession(sessionKey);
-            const fullResponse = assistantBuffers.get(sessionKey);
-            if (userId && fullResponse) {
-                appendToHistory(userId, {
-                    role: 'assistant',
-                    content: fullResponse,
-                    timestamp: Date.now(),
-                });
-            }
             assistantBuffers.delete(sessionKey);
 
             // Clean up the pending request for this session
@@ -716,8 +692,18 @@ wss.on('connection', async (ws, req) => {
     // Send connection confirmation
     sendToBrowser(ws, { type: 'connected', sessionKey, userId });
 
-    // Send chat history if it exists
-    sendHistory(ws, userId);
+    // Fetch history from OpenClaw's native state management
+    if (isConnected && openclawWs) {
+        const historyId = getNextId();
+        pendingRequests.set(historyId, { browserWs: ws, sessionKey, isHistoryRequest: true });
+        openclawWs.send(JSON.stringify({
+            type: 'req',
+            id: historyId,
+            method: 'chat.history',
+            params: { sessionKey, limit: 200 },
+        }));
+        console.log(`[ws-proxy] Requested chat.history for ${sessionKey} (id=${historyId})`);
+    }
 
     ws.on('message', (data) => {
         try {
@@ -770,9 +756,6 @@ async function handleBrowserMessage(ws, msg) {
     }
 
     if (msg.type === 'new-session') {
-        // Archive existing history and create a fresh empty one
-        archiveAndResetHistory(session.userId);
-
         // Send /new to OpenClaw to start a fresh conversation thread
         sendToOpenClaw(ws, session.sessionKey, '/new');
 
@@ -785,13 +768,6 @@ async function handleBrowserMessage(ws, msg) {
         }
         console.log(`[ws-proxy] New session started for user ${session.userId}`);
     } else if (msg.type === 'message') {
-        // Persist user message to history
-        appendToHistory(session.userId, {
-            role: 'user',
-            content: msg.content,
-            timestamp: Date.now(),
-        });
-
         // Broadcast the user's message to any *other* browser windows for this user
         const wsSet = sessionToBrowser.get(session.sessionKey);
         if (wsSet) {
@@ -840,7 +816,6 @@ async function handleBrowserMessage(ws, msg) {
         }
         broadcastToSession(session.sessionKey, { type: 'chunk', content: chatMsg });
         broadcastToSession(session.sessionKey, { type: 'final' });
-        appendToHistory(session.userId, { role: 'assistant', content: chatMsg, timestamp: Date.now() });
     } else if (msg.type === 'reject_action') {
         const pending = sessionPendingActions.get(session.sessionKey);
         const rejectedAction = pending?.[msg.actionId];
@@ -853,7 +828,6 @@ async function handleBrowserMessage(ws, msg) {
         const rejectMsg = `✗ Action rejected: **${rejectPreview}**`;
         broadcastToSession(session.sessionKey, { type: 'chunk', content: rejectMsg });
         broadcastToSession(session.sessionKey, { type: 'final' });
-        appendToHistory(session.userId, { role: 'assistant', content: rejectMsg, timestamp: Date.now() });
     } else {
         sendToBrowser(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
     }
