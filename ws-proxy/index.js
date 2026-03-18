@@ -46,9 +46,6 @@ const pendingRequests = new Map();
 const assistantBuffers = new Map();
 // Parser state for thinking tags (stream=assistant)
 const sessionParsingState = new Map();
-// Maps sessionKey -> { [actionId]: { tool, eventId, args, timestamp } }
-const sessionPendingActions = new Map();
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Content Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -120,75 +117,6 @@ function scheduleReconnect() {
         reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
         connectToOpenClaw();
     }, reconnectDelay);
-}
-
-async function getValidToken(session) {
-    const thirtyMin = 30 * 60 * 1000;
-    const ctx = session.sessionCtx;
-    if (!ctx) return null;
-    const expiresAt = ctx.expiresAt ? new Date(ctx.expiresAt).getTime() : 0;
-    if (!ctx.actionToken || (expiresAt && Date.now() > expiresAt - thirtyMin)) {
-        const webappUrl = process.env.WEBAPP_URL;
-        const cronSecretKey = process.env.CRON_SECRET_KEY;
-        if (!webappUrl || !cronSecretKey) return ctx.actionToken;
-        try {
-            const sessionRes = await fetch(`${webappUrl}/api/intelligence/session`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${cronSecretKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ clerkToken: session.token, eventId: session.eventId ?? undefined })
-            });
-            if (sessionRes.ok) {
-                const data = await sessionRes.json();
-                ctx.actionToken = data.actionToken;
-                ctx.expiresAt = data.expiresAt;
-                console.log(`[ws-proxy] Token refreshed for session`);
-            }
-        } catch (err) {
-            console.warn('[ws-proxy] Token refresh failed:', err.message);
-        }
-    }
-    return ctx?.actionToken ?? null;
-}
-
-async function callEventPlannerAction(token, { tool, eventId, args }) {
-    const webappUrl = process.env.WEBAPP_URL;
-    if (!webappUrl) return { ok: false, data: { error: 'WEBAPP_URL not configured' } };
-    try {
-        const res = await fetch(`${webappUrl}/api/intelligence/actions`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ tool, eventId, args: { ...args, confirmed: true } })
-        });
-        const data = await res.json();
-        return { ok: res.ok, data };
-    } catch (err) {
-        return { ok: false, data: { error: err.message } };
-    }
-}
-
-function formatActionPreview(tool, args) {
-    switch (tool) {
-        case 'createMeeting':
-            return `Create meeting: "${args.title || 'Untitled'}" on ${args.date || '?'} ${args.startTime || ''}–${args.endTime || ''}`;
-        case 'cancelMeeting':
-            return `Cancel meeting ID: ${args.meetingId || '?'}`;
-        case 'updateMeeting':
-            return `Update meeting ID: ${args.meetingId || '?'}`;
-        case 'addAttendee':
-            return `Add attendee: ${args.name || '?'} (${args.email || '?'})`;
-        case 'updateCompany':
-            return `Update company ID: ${args.companyId || '?'}`;
-        case 'updateROITargets':
-            return `Update ROI targets for event: ${args.eventId || '?'}`;
-        default:
-            return `${tool}: ${JSON.stringify(args)}`;
-    }
 }
 
 function getNextId() {
@@ -481,45 +409,10 @@ function handleOpenClawMessage(msg) {
                 }
             }
 
-            // Parse [PENDING_ACTION] blocks from the complete response
-            const pendingActionRe = /\[PENDING_ACTION\s+id="([^"]+)"\s+tool="([^"]+)"\s+eventId="([^"]+)"\s+args='([\s\S]*?)'\]/g;
-            const fullBuf = assistantBuffers.get(sessionKey) || '';
-            let hasPendingActions = false;
-            let pendingMatch;
-            while ((pendingMatch = pendingActionRe.exec(fullBuf)) !== null) {
-                const [fullMatch, actionId, tool, eventId, argsStr] = pendingMatch;
-                let args;
-                try {
-                    args = JSON.parse(argsStr);
-                } catch (e) {
-                    broadcastToSession(sessionKey, { type: 'action_error', error: `Invalid args JSON in [PENDING_ACTION]: ${e.message}` });
-                    continue;
-                }
-                let pending = sessionPendingActions.get(sessionKey);
-                if (!pending) {
-                    pending = {};
-                    sessionPendingActions.set(sessionKey, pending);
-                }
-                if (pending[actionId]) {
-                    console.warn(`[ws-proxy] Duplicate actionId ${actionId} - overwriting`);
-                }
-                pending[actionId] = { tool, eventId, args, timestamp: Date.now() };
-                const preview = formatActionPreview(tool, args);
-                broadcastToSession(sessionKey, {
-                    type: 'pending_action',
-                    actionId,
-                    tool,
-                    eventId,
-                    preview
-                });
-                hasPendingActions = true;
-                console.log(`[ws-proxy] Parsed [PENDING_ACTION] id=${actionId} tool=${tool} eventId=${eventId}`);
-            }
-
-            // If no content was generated and no pending actions were parsed,
+            // If no content was generated,
             // send a fallback message so the user isn't left with a silent empty response.
             const currentBuf = assistantBuffers.get(sessionKey) || '';
-            if (!currentBuf && !hasPendingActions) {
+            if (!currentBuf) {
                 const fallbackMsg = "I wasn't able to generate a response. Please try again.";
                 broadcastToSession(sessionKey, { type: 'chunk', content: fallbackMsg });
                 assistantBuffers.set(sessionKey, fallbackMsg);
@@ -744,17 +637,6 @@ async function handleBrowserMessage(ws, msg) {
         return;
     }
 
-    // Clean up expired pending actions (>10 min)
-    const sessionPending = sessionPendingActions.get(session.sessionKey);
-    if (sessionPending) {
-        for (const [id, action] of Object.entries(sessionPending)) {
-            if (Date.now() - action.timestamp > 10 * 60 * 1000) {
-                delete sessionPending[id];
-                console.log(`[ws-proxy] Auto-expired pending action ${id}`);
-            }
-        }
-    }
-
     if (msg.type === 'new-session') {
         // Send /new to OpenClaw to start a fresh conversation thread
         sendToOpenClaw(ws, session.sessionKey, '/new');
@@ -782,52 +664,6 @@ async function handleBrowserMessage(ws, msg) {
         }
 
         sendToOpenClaw(ws, session.sessionKey, msg.content, msg.entityType, msg.entityName);
-    } else if (msg.type === 'confirm_action') {
-        const pending = sessionPendingActions.get(session.sessionKey);
-        const action = pending?.[msg.actionId];
-        if (!action) {
-            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, error: 'Unknown or expired action ID' });
-            return;
-        }
-        // Expire check (10 minutes)
-        if (Date.now() - action.timestamp > 10 * 60 * 1000) {
-            delete pending[msg.actionId];
-            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, data: { error: 'Action expired (>10 minutes)' } });
-            return;
-        }
-        delete pending[msg.actionId];
-        const token = await getValidToken(session);
-        if (!token) {
-            sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, data: { error: 'No valid auth token' } });
-            return;
-        }
-        console.log(`[ws-proxy] Executing confirmed action ${msg.actionId}: ${action.tool}`);
-        const result = await callEventPlannerAction(token, action);
-        sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: result.ok, data: result.data });
-
-        // Broadcast a chat message summarising the outcome
-        const preview = formatActionPreview(action.tool, action.args);
-        let chatMsg;
-        if (result.ok) {
-            chatMsg = `✓ Action completed: **${preview}**`;
-        } else {
-            const errMsg = result.data?.error || 'Unknown error';
-            chatMsg = `✗ Action failed: **${preview}**\n\nError: ${errMsg}`;
-        }
-        broadcastToSession(session.sessionKey, { type: 'chunk', content: chatMsg });
-        broadcastToSession(session.sessionKey, { type: 'final' });
-    } else if (msg.type === 'reject_action') {
-        const pending = sessionPendingActions.get(session.sessionKey);
-        const rejectedAction = pending?.[msg.actionId];
-        if (pending) delete pending[msg.actionId];
-        sendToBrowser(ws, { type: 'action_result', actionId: msg.actionId, success: false, rejected: true });
-        console.log(`[ws-proxy] Action ${msg.actionId} rejected by user`);
-
-        // Broadcast a chat message for the rejection
-        const rejectPreview = rejectedAction ? formatActionPreview(rejectedAction.tool, rejectedAction.args) : msg.actionId;
-        const rejectMsg = `✗ Action rejected: **${rejectPreview}**`;
-        broadcastToSession(session.sessionKey, { type: 'chunk', content: rejectMsg });
-        broadcastToSession(session.sessionKey, { type: 'final' });
     } else {
         sendToBrowser(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
     }
