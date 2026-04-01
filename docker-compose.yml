@@ -22,6 +22,7 @@ services:
       MINIMAX_API_KEY: ${MINIMAX_API_KEY}
       BRAVE_API_KEY: ${BRAVE_API_KEY}
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
+      GPTZERO_API_KEY: ${GPTZERO_API_KEY}
       DEBUG: "openclaw:*"
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
