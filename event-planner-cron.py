@@ -273,7 +273,7 @@ def run_cron_add(name, cron_expr):
 if __name__ == "__main__":
     jobs_to_add = [
         ("market-intelligence-tuesday", "0 6 * * 2"),
-        ("market-intelligence-thursday", "0 6 * * 4"),
+        #         ("market-intelligence-thursday", "0 6 * * 4"),
     ]
     remove_existing_jobs([job[0] for job in jobs_to_add])
     for name, cron_expr in jobs_to_add:
