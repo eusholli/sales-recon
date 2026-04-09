@@ -3,7 +3,7 @@
     "additionalDirectories": [
       "../event-planner",
       "../../.openclaw",
-      "../li-article-agent"
+      "../li-agent"
     ]
   }
 }
