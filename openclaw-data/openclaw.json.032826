@@ -1,0 +1,304 @@
+{
+  "meta": {
+    "lastTouchedVersion": "2026.3.8",
+    "lastTouchedAt": "2026-03-10T16:25:33.655Z"
+  },
+  "wizard": {
+    "lastRunAt": "2026-03-10T16:25:33.647Z",
+    "lastRunVersion": "2026.3.8",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local"
+  },
+  "auth": {
+    "profiles": {
+      "google:default": {
+        "provider": "google",
+        "mode": "api_key"
+      },
+      "xai:default": {
+        "provider": "xai",
+        "mode": "api_key"
+      },
+      "minimax:default": {
+        "provider": "minimax",
+        "mode": "api_key"
+      },
+      "moonshot:default": {
+        "provider": "moonshot",
+        "mode": "api_key"
+      }
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "moonshot": {
+        "baseUrl": "https://api.moonshot.cn/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "kimi-k2.5",
+            "name": "Kimi K2.5",
+            "cost": {
+              "input": 0.0006,
+              "output": 0.0025
+            },
+            "contextWindow": 256000
+          }
+        ]
+      },
+      "xai": {
+        "baseUrl": "https://api.x.ai/v1",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "grok-4-1-fast",
+            "name": "Grok 4.1 Fast",
+            "cost": {
+              "input": 0.0001,
+              "output": 0.0004
+            },
+            "contextWindow": 131072
+          }
+        ]
+      },
+      "google": {
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+        "api": "google-generative-ai",
+        "models": [
+          {
+            "id": "gemini-3.1-flash-lite-preview",
+            "name": "Gemini 3.1 Flash Lite",
+            "cost": {
+              "input": 0.0001,
+              "output": 0.0004
+            },
+            "contextWindow": 1048576
+          },
+          {
+            "id": "gemini-3-flash-preview",
+            "name": "Gemini 3 Flash",
+            "cost": {
+              "input": 0.0001,
+              "output": 0.0004
+            },
+            "contextWindow": 1048576
+          },
+          {
+            "id": "gemini-3.1-pro-preview",
+            "name": "Gemini 3.1 Pro",
+            "cost": {
+              "input": 0.00125,
+              "output": 0.005
+            },
+            "contextWindow": 1048576
+          },
+          {
+            "id": "gemini-2.5-flash-lite-preview-09-2025",
+            "name": "Gemini 2.5 Flash Lite",
+            "cost": {
+              "input": 0.0001,
+              "output": 0.0001
+            },
+            "contextWindow": 1048576
+          }
+        ]
+      },
+      "minimax": {
+        "baseUrl": "https://api.minimax.io/anthropic",
+        "api": "anthropic-messages",
+        "authHeader": true,
+        "models": [
+          {
+            "id": "MiniMax-M2.7",
+            "name": "MiniMax M2.7",
+            "reasoning": true,
+            "input": [
+              "text"
+            ],
+            "cost": {
+              "input": 15,
+              "output": 60,
+              "cacheRead": 2,
+              "cacheWrite": 10
+            },
+            "contextWindow": 200000,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "google/gemini-3-flash-preview",
+        "fallbacks": [
+          "google/gemini-3.1-flash-lite-preview",
+          "moonshot/kimi-k2.5",
+          "minimax/MiniMax-M2.7"
+        ]
+      },
+      "models": {
+        "google/gemini-3.1-pro-preview": {
+          "alias": "kenji-pro"
+        },
+        "google/gemini-3.1-flash-lite-preview": {
+          "alias": "kenji-3.1"
+        },
+        "google/gemini-3-flash-preview": {
+          "alias": "kenji"
+        },
+        "google/gemini-2.5-flash-lite-preview-09-2025": {
+          "alias": "kenji-lite"
+        },
+        "moonshot/kimi-k2.5": {
+          "alias": "reasoner"
+        },
+        "xai/grok-4-1-fast": {
+          "alias": "grok-search"
+        },
+        "minimax/MiniMax-M2.7": {
+          "alias": "deep-thinker"
+        }
+      },
+      "workspace": "/home/node/.openclaw/workspace",
+      "thinkingDefault": "low",
+      "verboseDefault": "on",
+      "maxConcurrent": 4
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "Symphony Signal",
+        "subagents": {
+          "allowAgents": [
+            "*"
+          ]
+        },
+        "tools": {
+          "exec": {
+            "security": "allowlist",
+            "ask": "off",
+            "safeBins": [
+              "curl"
+            ],
+            "safeBinProfiles": {
+              "curl": {}
+            }
+          }
+        }
+      }
+    ]
+  },
+  "tools": {
+    "web": {
+      "search": {
+        "enabled": true,
+        "provider": "brave"
+      },
+      "fetch": {
+        "enabled": true
+      }
+    },
+    "elevated": {
+      "enabled": true,
+      "allowFrom": {
+        "webchat": [
+          "*"
+        ],
+        "cron": [
+          "*"
+        ]
+      }
+    },
+    "sandbox": {
+      "tools": {
+        "allow": [
+          "cron",
+          "exec",
+          "process",
+          "read",
+          "write",
+          "edit",
+          "apply_patch",
+          "image",
+          "sessions_list",
+          "sessions_history",
+          "sessions_send",
+          "sessions_spawn",
+          "subagents",
+          "session_status"
+        ],
+        "deny": [
+          "browser",
+          "canvas",
+          "nodes",
+          "gateway",
+          "telegram",
+          "whatsapp",
+          "discord",
+          "irc",
+          "googlechat",
+          "slack",
+          "signal",
+          "imessage",
+          "line"
+        ]
+      }
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "cron": {
+    "maxConcurrentRuns": 3
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "gateway": {
+    "port": 50045,
+    "mode": "local",
+    "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": [
+        "https://control.maximh.us",
+        "http://localhost:50045"
+      ]
+    },
+    "auth": {
+      "mode": "token"
+    },
+    "trustedProxies": [
+      "127.0.0.1",
+      "::1",
+      "172.16.0.0/12",
+      "192.168.0.0/16",
+      "10.0.0.0/8"
+    ],
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    }
+  },
+  "skills": {
+    "install": {
+      "nodeManager": "npm"
+    }
+  }
+}

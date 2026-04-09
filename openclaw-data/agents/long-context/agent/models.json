@@ -1,0 +1,206 @@
+{
+  "providers": {
+    "minimax": {
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "api": "anthropic-messages",
+      "models": [
+        {
+          "id": "MiniMax-M2.5",
+          "name": "MiniMax M2.5",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 15,
+            "output": 60,
+            "cacheRead": 2,
+            "cacheWrite": 10
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192,
+          "api": "anthropic-messages"
+        },
+        {
+          "id": "MiniMax-M2.1",
+          "name": "MiniMax M2.1",
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.03,
+            "cacheWrite": 0.12
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        },
+        {
+          "id": "MiniMax-M2.1-lightning",
+          "name": "MiniMax M2.1 Lightning",
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.03,
+            "cacheWrite": 0.12
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        },
+        {
+          "id": "MiniMax-VL-01",
+          "name": "MiniMax VL 01",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.03,
+            "cacheWrite": 0.12
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        },
+        {
+          "id": "MiniMax-M2.5-Lightning",
+          "name": "MiniMax M2.5 Lightning",
+          "reasoning": true,
+          "input": [
+            "text"
+          ],
+          "cost": {
+            "input": 0.3,
+            "output": 1.2,
+            "cacheRead": 0.03,
+            "cacheWrite": 0.12
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        }
+      ],
+      "apiKey": "MINIMAX_API_KEY"
+    },
+    "moonshot": {
+      "baseUrl": "https://api.moonshot.cn/v1",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "kimi-k2.5",
+          "name": "Kimi K2.5",
+          "cost": {
+            "input": 0.0006,
+            "output": 0.0025,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 256000,
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "maxTokens": 8192,
+          "api": "openai-completions"
+        }
+      ],
+      "apiKey": "MOONSHOT_API_KEY"
+    },
+    "openrouter": {
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "auto",
+          "name": "OpenRouter Auto",
+          "reasoning": false,
+          "input": [
+            "text",
+            "image"
+          ],
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 200000,
+          "maxTokens": 8192
+        }
+      ],
+      "apiKey": "OPENROUTER_API_KEY"
+    },
+    "xai": {
+      "baseUrl": "https://api.x.ai/v1",
+      "api": "openai-completions",
+      "models": [
+        {
+          "id": "grok-4-1-fast",
+          "name": "Grok 4.1 Fast",
+          "cost": {
+            "input": 0.0001,
+            "output": 0.0004,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 131072,
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "maxTokens": 8192,
+          "api": "openai-completions"
+        }
+      ],
+      "apiKey": "XAI_API_KEY"
+    },
+    "google": {
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "api": "google-generative-ai",
+      "models": [
+        {
+          "id": "gemini-3-flash-preview",
+          "name": "Gemini 3 Flash",
+          "cost": {
+            "input": 0.0001,
+            "output": 0.0004,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 1048576,
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "maxTokens": 8192,
+          "api": "google-generative-ai"
+        },
+        {
+          "id": "gemini-2.5-flash-lite-preview-09-2025",
+          "name": "Gemini 2.5 Flash Lite",
+          "cost": {
+            "input": 0.0001,
+            "output": 0.00001,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 1048576,
+          "reasoning": false,
+          "input": [
+            "text"
+          ],
+          "maxTokens": 8192,
+          "api": "google-generative-ai"
+        }
+      ],
+      "apiKey": "GEMINI_API_KEY"
+    }
+  }
+}

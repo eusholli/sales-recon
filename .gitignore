@@ -1,3 +1,8 @@
+# ============================================
+# Merged .gitignore (Sales-Recon + OpenClaw Mono-Repo)
+# ============================================
+
+# --- Node, Python, Bun, Build & Standard Env ---
 node_modules
 **/node_modules/
 .env*
@@ -22,12 +27,12 @@ ui/src/ui/__screenshots__/
 ui/playwright-report/
 ui/test-results/
 
-# Android build artifacts
+# --- Android build artifacts ---
 apps/android/.gradle/
 apps/android/app/build/
 apps/android/.cxx/
 
-# Bun build artifacts
+# --- Bun / Swift / macOS build artifacts ---
 *.bun-build
 apps/macos/.build/
 apps/shared/MoltbotKit/.build/
@@ -49,13 +54,13 @@ apps/macos/.build/**
 **/*.bun-build
 apps/ios/*.xcfilelist
 
-# Vendor build artifacts
+# --- Vendor build artifacts ---
 vendor/a2ui/renderers/lit/dist/
 src/canvas-host/a2ui/*.bundle.js
 src/canvas-host/a2ui/*.map
 .bundle.hash
 
-# fastlane (iOS)
+# --- fastlane (iOS) ---
 apps/ios/fastlane/README.md
 apps/ios/fastlane/report.xml
 apps/ios/fastlane/Preview.html
@@ -63,26 +68,32 @@ apps/ios/fastlane/screenshots/
 apps/ios/fastlane/test_output/
 apps/ios/fastlane/logs/
 apps/ios/fastlane/.env
-
-# fastlane build artifacts (local)
 apps/ios/*.ipa
 apps/ios/*.dSYM.zip
-
-# provisioning profiles (local)
 apps/ios/*.mobileprovision
 
-# Local untracked files
+# --- Local untracked files & tooling ---
 .local/
 docs/.local/
 IDENTITY.md
 USER.md
 *.tgz
 .idea
-
-# local tooling
 .serena/
 
-# Agent credentials and memory (NEVER COMMIT)
+# --- Build and logs ---
+.next/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- IDEs ---
+.idea/
+.vscode/docker-compose.override.yml
+
+# --- Agent credentials and memory (Legacy paths) ---
 /memory/
 .agent/*.json
 !.agent/workflows/
@@ -91,15 +102,68 @@ package-lock.json
 ws-proxy/data/device.identity.json
 ws-proxy/data/device.json
 ws-proxy/data/history/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
 
-# Build and logs
-.next/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+# ============================================
+# OpenClaw 4.2 Config Rules (Mapped to openclaw-data/)
+# ============================================
 
-# IDEs
-.idea/
-.vscode/docker-compose.override.yml
+# --- CREDENTIALS & SECRETS (CRITICAL) ---
+openclaw-data/identity/
+openclaw-data/credentials/
+openclaw-data/devices/
+openclaw-data/agents/*/agent/auth-profiles.json
+openclaw-data/agents/*/agent/auth.json
+# NOTE: exec-approvals.json is purposely TRACKED to sync approvals to Hetzner
+
+# --- RUNTIME & EPHEMERAL DATA ---
+openclaw-data/memory/
+openclaw-data/logs/
+openclaw-data/completions/
+openclaw-data/cron/
+openclaw-data/subagents/
+openclaw-data/canvas/
+openclaw-data/update-check.json
+
+# --- SESSION DATA ---
+openclaw-data/agents/*/sessions/
+
+# --- BACKUP FILES ---
+*.bak
+*.bak.*
+
+# --- WORKSPACE RUNTIME ---
+openclaw-data/workspace/.openclaw/
+openclaw-data/workspace/.pi/
+openclaw-data/workspace/device.identity.json/
+openclaw-data/workspace-tavily/.openclaw/
+openclaw-data/workspace-tavily/.pi/
+openclaw-data/workspace-tavily/device.identity.json/
+
+# --- WORKSPACE MEMORY / RESEARCH ARTIFACTS ---
+openclaw-data/workspace/memory/
+openclaw-data/workspace-tavily/memory/
+openclaw-data/workspace-long-context/memory/
+
+# Explicitly ignored research artifacts
+openclaw-data/workspace/AT&T_Sales_Intelligence_2026.md
+openclaw-data/workspace/Krishna_Rao.md
+
+# --- DEVICE IDENTITY ---
+openclaw-data/device.identity.json/
+
+# --- ADDITIONAL OVERRIDES ---
+
+# --- SQLite Additions ---
+*.sqlite-shm
+
+# --- Temp Files ---
+*.tmp
+
+# --- Additional Auth State ---
+openclaw-data/agents/*/agent/auth-state.json
+
+# --- Ensure deep .openclaw paths are ignored ---
+openclaw-data/workspace-*/.openclaw/
