@@ -2,7 +2,6 @@
   "permissions": {
     "additionalDirectories": [
       "../event-planner",
-      "../../.openclaw",
       "../li-agent"
     ]
   }
