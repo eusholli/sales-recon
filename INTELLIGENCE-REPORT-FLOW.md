@@ -119,6 +119,7 @@ Each run is `--session isolated`, meaning the agent starts with no conversation 
 **Auth:** `Authorization: Bearer {CRON_SECRET_KEY}`
 
 The agent runs:
+
 ```bash
 curl --fail-with-body --show-error --max-time 30 \
   -H "Authorization: Bearer {CRON_SECRET_KEY}" \
@@ -170,6 +171,7 @@ sales-recon/openclaw-data/workspace/memory/
 ```
 
 File naming: spaces → underscores, e.g.:
+
 - `Nokia.md`
 - `Timo_Ihamuotila.md`
 - `FutureNet_World_2026.md`
@@ -200,6 +202,7 @@ Every memory file follows this exact four-section layout:
 The `[FRICTION]` tag is prepended to any entry that identifies a hardware-cycle dependency, proprietary lock-in, integration complexity, or legacy architecture — these are explicit sales opportunity signals.
 
 Example:
+
 ```
 - **2026-04-08** — [FRICTION] Nokia's AI-RAN roadmap requires dedicated Marvell OCTEON silicon;
   software-defined alternatives not yet qualified on their preferred hardware
@@ -422,6 +425,7 @@ Unsubscribe | You're receiving this because you subscribed at eventplanner.app
 **UI:** `/intelligence/subscribe` page in the event-planner Next.js app
 
 Users manage three selection types:
+
 - **Companies** — Subscribe to a company entity
 - **Attendees** — Subscribe to a specific person
 - **Events** — Subscribe to an event (automatically surfaces all linked attendees)
@@ -495,66 +499,6 @@ These daily log files accumulate in `memory/` and are archived when they exceed 
 **Event-linked targeting** is smart and directly actionable. A sales rep heading to FutureNet World gets a briefing on every tracked attendee who will be at that event. This is the highest-value use case.
 
 **48-hour freshness checks** avoid redundant API calls and keep the agent fast, while ensuring the report always reflects the latest available intelligence.
-
----
-
-### Gaps and Improvement Opportunities
-
-#### 1. No Deal-Stage Awareness
-
-The system has no concept of where a prospect sits in the sales pipeline. A briefing on Nokia looks identical whether it is a cold prospect, an active $500K opportunity in final negotiations, or a recently closed account. The `salesAngle` should be tuned to deal stage:
-- Cold: focus on pain point identification and conversation-starter angles
-- Active deal: focus on competitive differentiation vs. the incumbent being evaluated
-- Closed: focus on expansion and renewal signals
-
-**Fix:** Surface `pipelineValue` from the targets response and instruct the agent to weight the depth of research and tone of the sales angle to pipeline stage (could be inferred from value thresholds or added as a separate field).
-
-#### 2. No Trigger-Based Out-of-Cycle Alerts
-
-Intelligence is only delivered on Tuesday. If Nokia announces an acquisition on Wednesday, the sales rep does not learn about it for six days. Competitor wins, executive departures, regulatory rulings, and contract awards are exactly the moments when outreach is most effective — and they are time-sensitive.
-
-**Fix:** Add a heartbeat-triggered alert path. The existing `HEARTBEAT.md` already scans for breaking news 2–3× daily. When a `[FRICTION]` or high-signal event is detected, send an immediate out-of-cycle email flagged as "Breaking Intelligence Alert" rather than queuing it for Tuesday.
-
-#### 3. No Suggested Next Action
-
-The email delivers intelligence but stops short of telling the rep what to do with it. A B2B telecom rep carrying a large territory doesn't just want to know what happened — they need to know what to do next.
-
-**Fix:** Add a "Recommended Action" field per target in the email. Examples:
-- "Request a meeting with Timo Ihamuotila before FutureNet (Apr 21) to discuss capex optimization"
-- "Send Nokia's network ops team the RS satellite OSS brief following Mar 10 launch"
-- "Monitor Ericsson AT&T contract renewal — decision expected Q3; position RS as alternative"
-
-This is a small addition to the AI composition prompt but significantly increases the email's utility.
-
-#### 4. No Competitive Displacement Framing
-
-When Ericsson wins a new AT&T contract, the natural RS response is to identify who **didn't** win (the next operator in that tier, or the displaced vendor), or to frame what RS offers specifically to an operator locked into Ericsson infrastructure. The current system reports the Ericsson win but doesn't make that connection explicit.
-
-**Fix:** Add a "Competitive Implication" dimension to `salesAngle` generation — when a competitor win/loss is detected, the angle should name the next logical target or the displaced party's pain.
-
-#### 5. No Prioritization Signal
-
-When a rep receives a briefing covering five companies and three attendees, all entries appear equal. In practice, Nokia with $500K in pipeline and a conference appearance next week is not the same priority as a cold-contact company with no pending opportunity.
-
-**Fix:** Add a priority tier (High / Medium / Watch) to each target entry in the email, derived from `pipelineValue`, subscription count, event proximity, and freshness of `[FRICTION]` tags. The email should lead with High-priority targets.
-
-#### 6. Full Report Not Accessible to the User
-
-The `fullReport` field (the full `## Latest` markdown) is stored in the database but the subscriber only sees a 2–3 sentence `summary`. The full report contains the kind of nuanced, sourced intelligence that a rep would want to read before a meeting.
-
-**Fix:** Add a "Read full brief →" link per target in the email that opens a web page rendering `fullReport` for that target (gated by Clerk auth). This also provides a web-accessible archive of all past intelligence per company/person.
-
-#### 7. Email-Only Delivery
-
-For a time-sensitive, mobile-first sales role, email is a slow delivery channel. A rep in an airport en route to a conference will not check their email client for intelligence updates.
-
-**Fix:** Add Slack/Teams integration as an optional delivery channel. The webhook already knows which users subscribed — adding a Slack DM via the Slack API or a Teams webhook is a small addition. A short-form Slack message (target name + one-line sales angle + link to full brief) is more immediately actionable than an HTML email.
-
-#### 8. No Feedback Loop
-
-There is no mechanism for the rep to signal whether an intelligence update was useful, led to a conversation, or triggered an action. Without this signal, the system cannot improve which targets are worth researching or which angles are resonating.
-
-**Fix:** Add a simple "Was this useful? [Yes] [No]" one-click link per target in the email (tracked via a lightweight API endpoint). Aggregate positive signals back into the memory file as evidence that an angle worked — and use that to guide future salesAngle generation for similar situations.
 
 ---
 

@@ -56,6 +56,8 @@ to the next target — do not abort the whole run.
 SEARCH TOOL CONSTRAINT: Use the `web_search` tool (Brave) for ALL research in this session.
 Do NOT use `x_search` or X/Twitter — this task requires structured corporate press releases
 and IR sources, not social media signals.
+RATE LIMIT: After every web_search call, wait 2 seconds before issuing the next web_search
+call. This is mandatory for every search call in this session without exception.
 
 1. FETCH TARGETS
     CRITICAL: Do NOT use the `web_fetch` tool. It will fail due to SSRF protections.
@@ -119,6 +121,12 @@ and IR sources, not social media signals.
     announcement, Rakuten Symphony's software-defined OSS (per Mar 10 satellite OSS launch)
     offers a direct path off the hardware refresh cycle."
 
+    For each target, also generate a "recommendedAction": a single time-sensitive sentence
+    telling the RS sales team exactly what to do next (e.g. "Request a meeting with Timo
+    Ihamuotila before FutureNet World on Apr 21 to position RS OSS on the capex review").
+    Must reference a real upcoming event, deal window, or recent trigger.
+    Never write a generic action. If no clear time-sensitive trigger exists, omit the field.
+
     {{
     "runId": "YYYY-MM-DD-cron",
     "timestamp": "<ISO 8601>",
@@ -128,6 +136,7 @@ and IR sources, not social media signals.
         "name": "<exact name from targets response>",
         "summary": "<2–3 sentence update>",
         "salesAngle": "<1 sentence referencing a specific RS initiative vs this target's current situation>",
+        "recommendedAction": "<1-sentence time-sensitive next step, omit if no clear trigger>",
         "fullReport": "<full markdown of the updated ## Latest section only>"
         }}
     ]
