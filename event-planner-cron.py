@@ -53,11 +53,15 @@ If write_file or edit_file fails, retry once. If it fails again, log the error a
 to the next target — do not abort the whole run.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+SEARCH TOOL CONSTRAINT: Use the `web_search` tool (Brave) for ALL research in this session.
+Do NOT use `x_search` or X/Twitter — this task requires structured corporate press releases
+and IR sources, not social media signals.
+
 1. FETCH TARGETS
     CRITICAL: Do NOT use the `web_fetch` tool. It will fail due to SSRF protections.
     Use your terminal/shell tool (`exec`) to run this exact shell command:
     curl --fail-with-body --show-error --max-time 30 -H "Authorization: Bearer {CRON_SECRET_KEY}" "{CRON_EVENT_PLANNER_DNS}/api/intelligence/targets"
-    Capture both the output and the curl exit code (echo $? immediately after).
+    Capture the full output. If the exec call returns a non-zero exit code, treat it as a fatal error.
     If the exit code is non-zero, print EXACTLY:
         "FATAL ERROR: Cannot reach event planner at {CRON_EVENT_PLANNER_DNS}. curl exit code: <exit_code>. Error output: <full stderr/stdout>"
     Then stop immediately — do NOT proceed to any further steps.
@@ -78,7 +82,7 @@ to the next target — do not abort the whole run.
     in updatedTargets if an event's linkedAttendees need refreshing.
 
     For each company in companies[] (subscriptionCount > 0):
-    a. Read memory/{{Company_Name}}.md (underscores for spaces). Check freshness (see above).
+    a. Read memory/{{Company_Name}}.md (replace spaces AND all non-alphanumeric characters with underscores; e.g. AT&T → AT_T, Rakuten Symphony → Rakuten_Symphony). Check freshness (see above).
     b. If not fresh: run ONE web_search — "<Company> telecom B2B strategy announcements 2026"
     with freshness: "pw".
     c. If a critical angle is missing (exec change, acquisition, major product launch), run
@@ -87,13 +91,13 @@ to the next target — do not abort the whole run.
     e. Apply MEMORY FILE UPDATE PROTOCOL above. Prepend findings to ## Latest.
 
     For each attendee in attendees[] (subscriptionCount > 0):
-    a. Read memory/{{First_Last}}.md. Check freshness.
+    a. Read memory/{{First_Last}}.md (replace spaces AND all non-alphanumeric characters with underscores). Check freshness.
     b. If not fresh: run ONE web_search — "<Full Name> <Company> role news 2026" with freshness: "pw".
     c. Synthesize: role changes, announcements, strategic signals relevant to Rakuten Symphony.
     d. Apply MEMORY FILE UPDATE PROTOCOL above. Prepend findings to ## Latest.
 
     For each event in events[] (subscriptionCount > 0):
-    a. Read memory/{{Event_Name}}.md. Check freshness.
+    a. Read memory/{{Event_Name}}.md (replace spaces AND all non-alphanumeric characters with underscores). Check freshness.
     b. If not fresh: run ONE web_search — "<Event Name> 2026 agenda keynotes exhibitors" with freshness: "pw".
     c. For each attendee in event.linkedAttendees[]: apply the attendee research process above
     (check freshness individually; skip if memory updated within 48 hours).
@@ -132,18 +136,16 @@ to the next target — do not abort the whole run.
     If no targets were updated, send the payload with an empty updatedTargets[].
 
 4. DELIVER
-    CRITICAL: Do NOT use the `web_fetch` tool. Use `exec` to run the following.
-    Write the JSON payload to /tmp/intel-report.json, then run:
+    CRITICAL: Do NOT use the `web_fetch` tool.
+    Use the write_file tool to write the JSON payload to /tmp/intel-report.json. Then use `exec` to run:
     curl --fail-with-body --show-error --max-time 30 -X POST \\
         -H "Authorization: Bearer {CRON_SECRET_KEY}" \\
         -H "Content-Type: application/json" \\
         -d @/tmp/intel-report.json \\
         "{CRON_EVENT_PLANNER_DNS}/api/webhooks/intel-report"
-    Capture both the response body and the curl exit code (echo $? immediately after).
-    If the exit code is non-zero, print EXACTLY:
+    Capture the full response body. If the exec call returns a non-zero exit code, print EXACTLY:
         "FATAL ERROR: Failed to deliver intel report to {CRON_EVENT_PLANNER_DNS}. curl exit code: <exit_code>. Response: <full response body>"
     Then exit with error status — do NOT mark the run as successful.
-    Delete /tmp/intel-report.json after the request completes (whether success or failure).
 
 5. LOG
     Append a summary entry to memory/YYYY-MM-DD.md (create the file if it does not exist;
@@ -247,13 +249,15 @@ def run_cron_add(name, cron_expr):
         cron_expr,
         "--agent",
         "main",
+        "--model",
+        "kenji-pro",
         "--message",
         CRON_MSG,
         "--session",
         "isolated",
+        "--no-deliver",
         "--tz",
         "America/Chicago",
-        "--best-effort-deliver",
     ]
     print(f"Adding cron job: {name} (cron: {cron_expr})")
     try:
@@ -273,7 +277,6 @@ def run_cron_add(name, cron_expr):
 if __name__ == "__main__":
     jobs_to_add = [
         ("market-intelligence-tuesday", "0 6 * * 2"),
-        #         ("market-intelligence-thursday", "0 6 * * 4"),
     ]
     remove_existing_jobs([job[0] for job in jobs_to_add])
     for name, cron_expr in jobs_to_add:
