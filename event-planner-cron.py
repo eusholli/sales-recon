@@ -32,140 +32,57 @@ CRON_MSG = f"""You are running an autonomous market intelligence cycle for Rakut
 Follow these steps exactly and in order. Do not skip steps.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MEMORY FILE UPDATE PROTOCOL — apply this to EVERY file write in this session:
-
-All memory files use this canonical structure (exact section names, exact order):
-## Latest        ← 3–8 most recent updates, newest first. Keep ≤ 20 lines.
-## Profile       ← Role, bio, background. Never overwrite unless facts changed.
-## Key Decision Makers  ← (companies only) exec table with Name | Role | Recent Topic
-## Archive       ← Older entries. Move here when ## Latest exceeds 20 lines.
-
-BEFORE writing any memory file:
-1. Read the existing file with read_file. If it does not exist, create it fresh.
-2. If it exists: prepend new findings as bullet(s) at the TOP of ## Latest.
-    Keep ## Profile, ## Key Decision Makers, and ## Archive EXACTLY as they are unless
-    a fact has genuinely changed (e.g. new CEO, new role). NEVER replace the whole file
-    with only the new content — that destroys the Profile and history.
-3. If ## Latest now exceeds 20 lines, move the oldest entries to the bottom of ## Archive.
-4. Write back the COMPLETE merged file (all sections).
-
-If write_file or edit_file fails, retry once. If it fails again, log the error and continue
-to the next target — do not abort the whole run.
+MEMORY UPDATE & PRUNING PROTOCOL
+All memory files use a simple append-only timestamp format.
+1. Before researching, `read_file` the target's memory file. If the file does not exist, ignore the error and start fresh.
+2. Append new research at the END of the file with `## [YYYY-MM-DD]` header.
+3. Do NOT use `## Latest`, `## Profile`, or `## Archive` sections anymore.
+4. AUTO-PRUNE: If the file exceeds 150 lines, autonomously summarize the oldest entries into a short paragraph and trim those raw lines so it does not waste context tokens.
+5. Rate Limit & Search Cap: You MUST execute `web_search` calls SEQUENTIALLY, never in parallel. Wait 2 seconds between each search. The API allows only 1 request per second. NEVER perform more than 5 `web_search` calls total.
+6. Error Reporting: If an error or rate limit happens, never fail silently. Output a bold FATAL error string in the final JSON or log.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-SEARCH TOOL CONSTRAINT: Use the `web_search` tool (Brave) for ALL research in this session.
-Do NOT use `x_search` or X/Twitter — this task requires structured corporate press releases
-and IR sources, not social media signals.
-RATE LIMIT: After every web_search call, wait 2 seconds before issuing the next web_search
-call. This is mandatory for every search call in this session without exception.
-
 1. FETCH TARGETS
-    CRITICAL: Do NOT use the `web_fetch` tool. It will fail due to SSRF protections.
-    Use your terminal/shell tool (`exec`) to run this exact shell command:
-    curl --fail-with-body --show-error --max-time 30 -H "Authorization: Bearer {CRON_SECRET_KEY}" "{CRON_EVENT_PLANNER_DNS}/api/intelligence/targets"
-    Capture the full output. If the exec call returns a non-zero exit code, treat it as a fatal error.
-    If the exit code is non-zero, print EXACTLY:
-        "FATAL ERROR: Cannot reach event planner at {CRON_EVENT_PLANNER_DNS}. curl exit code: <exit_code>. Error output: <full stderr/stdout>"
-    Then stop immediately — do NOT proceed to any further steps.
-    If the response body is not valid JSON (e.g. empty, HTML error page, or parse error), print EXACTLY:
-        "FATAL ERROR: Targets endpoint returned invalid JSON. HTTP body: <first 500 chars of response>"
-    Then stop immediately — do NOT proceed to any further steps.
-    Parse the JSON response:
-    - companies[]: each has name, pipelineValue, subscriptionCount
-    - attendees[]: each has name, title, company, subscriptionCount
-    - events[]:    each has name, startDate, endDate, status, subscriptionCount, linkedAttendees[]
-    All entries with subscriptionCount > 0 are active research targets.
+Use your terminal/shell tool (`exec`) to run this exact shell command:
+curl --fail-with-body --show-error --max-time 30 -H "Authorization: Bearer {CRON_SECRET_KEY}" "{CRON_EVENT_PLANNER_DNS}/api/intelligence/targets"
+If the curl step fails or returns invalid JSON (e.g. HTML error page), stop immediately and output a FATAL HTTP ERROR string explaining the failure. Do not proceed.
+Filter for active targets (`subscriptionCount > 0`).
 
-2. RESEARCH EACH TARGET
-
-    FRESHNESS CHECK: Before researching any target, read_file its memory file.
-    If the file exists and ## Latest contains an entry dated within the last 48 hours, skip
-    the web_search for that target (mark it "skipped-fresh" in your log). Still include it
-    in updatedTargets if an event's linkedAttendees need refreshing.
-
-    For each company in companies[] (subscriptionCount > 0):
-    a. Read memory/{{Company_Name}}.md (replace spaces AND all non-alphanumeric characters with underscores; e.g. AT&T → AT_T, Rakuten Symphony → Rakuten_Symphony). Check freshness (see above).
-    b. If not fresh: run ONE web_search — "<Company> telecom B2B strategy announcements 2026"
-    with freshness: "pw".
-    c. If a critical angle is missing (exec change, acquisition, major product launch), run
-    ONE additional web_search. Maximum 2 web_search calls per target total.
-    d. Synthesize: what changed, and why it matters to Rakuten Symphony's radio/cloud/automation portfolio.
-    e. Apply MEMORY FILE UPDATE PROTOCOL above. Prepend findings to ## Latest.
-
-    For each attendee in attendees[] (subscriptionCount > 0):
-    a. Read memory/{{First_Last}}.md (replace spaces AND all non-alphanumeric characters with underscores). Check freshness.
-    b. If not fresh: run ONE web_search — "<Full Name> <Company> role news 2026" with freshness: "pw".
-    c. Synthesize: role changes, announcements, strategic signals relevant to Rakuten Symphony.
-    d. Apply MEMORY FILE UPDATE PROTOCOL above. Prepend findings to ## Latest.
-
-    For each event in events[] (subscriptionCount > 0):
-    a. Read memory/{{Event_Name}}.md (replace spaces AND all non-alphanumeric characters with underscores). Check freshness.
-    b. If not fresh: run ONE web_search — "<Event Name> 2026 agenda keynotes exhibitors" with freshness: "pw".
-    c. For each attendee in event.linkedAttendees[]: apply the attendee research process above
-    (check freshness individually; skip if memory updated within 48 hours).
-    d. Apply MEMORY FILE UPDATE PROTOCOL above. Prepend findings to ## Latest.
+2. RESEARCH EACH ACTIVE TARGET
+For each active company, attendee, or event:
+a. `read_file` their memory file at `memory/{{Target_Name}}.md` (replace spaces with underscores).
+b. If the file has been updated within the last 48 hours, skip research for this target.
+c. If not fresh, run ONE `web_search` for recent 2026 news/agenda/announcements. (Observe the global 5 searches max per session limit).
+d. Synthesize findings and WRITE to the memory file using the MEMORY UPDATE & PRUNING PROTOCOL.
 
 3. BUILD PAYLOAD
-    Before generating any salesAngle, read memory/Rakuten_Symphony.md. Extract the 3–5 most
-    recent bullets from its ## Latest section. These represent Rakuten Symphony's CURRENT
-    strategic positioning, product launches, and partnerships.
+You MUST generate the exact JSON format below for targets that had NEW intelligence.
+salesAngle MUST map the target's current situation to a specific Rakuten Symphony capability (avoid generic benefits). Use `memory/Rakuten_Symphony.md` as reference if needed.
+recommendedAction MUST BE a concrete sales-related next step.
 
-    For each salesAngle: identify which specific RS initiative from that ## Latest section
-    directly connects to the target's current situation (from their own ## Latest). The
-    salesAngle MUST name a concrete RS capability or recent announcement — never a generic
-    benefit. If a target has a [FRICTION] bullet in their memory file, use it to frame the
-    angle around the specific pain point.
-
-    Example of a BAD salesAngle: "Rakuten Symphony's automation platform could help this company."
-    Example of a GOOD salesAngle: "Following Nokia's March 2026 AI-RAN hardware dependency
-    announcement, Rakuten Symphony's software-defined OSS (per Mar 10 satellite OSS launch)
-    offers a direct path off the hardware refresh cycle."
-
-    For each target, also generate a "recommendedAction": a single time-sensitive sentence
-    telling the RS sales team exactly what to do next (e.g. "Request a meeting with Timo
-    Ihamuotila before FutureNet World on Apr 21 to position RS OSS on the capex review").
-    Must reference a real upcoming event, deal window, or recent trigger.
-    Never write a generic action. If no clear time-sensitive trigger exists, omit the field.
-
+{{
+"runId": "YYYY-MM-DD-cron",
+"timestamp": "<ISO 8601>",
+"updatedTargets": [
     {{
-    "runId": "YYYY-MM-DD-cron",
-    "timestamp": "<ISO 8601>",
-    "updatedTargets": [
-        {{
-        "type": "company" | "attendee" | "event",
-        "name": "<exact name from targets response>",
-        "summary": "<2–3 sentence update>",
-        "salesAngle": "<1 sentence referencing a specific RS initiative vs this target's current situation>",
-        "recommendedAction": "<1-sentence time-sensitive next step, omit if no clear trigger>",
-        "fullReport": "<full markdown of the updated ## Latest section only>"
-        }}
-    ]
+    "type": "company" | "attendee" | "event",
+    "name": "<exact name from targets>",
+    "summary": "<2–3 sentence update>",
+    "salesAngle": "<1 sentence referencing a specific RS initiative against target situation>",
+    "recommendedAction": "<1-sentence time-sensitive next step, omit if no clear trigger>",
+    "fullReport": "<The new timestamped findings you generated to append to memory>"
     }}
-    Include only targets where new intelligence was found (not skipped-fresh targets).
-    If no targets were updated, send the payload with an empty updatedTargets[].
+]
+}}
+If no new updates were found, return an empty `updatedTargets` array.
 
 4. DELIVER
-    CRITICAL: Do NOT use the `web_fetch` tool.
-    Use the write_file tool to write the JSON payload to /tmp/intel-report.json. Then use `exec` to run:
-    curl --fail-with-body --show-error --max-time 30 -X POST \\
-        -H "Authorization: Bearer {CRON_SECRET_KEY}" \\
-        -H "Content-Type: application/json" \\
-        -d @/tmp/intel-report.json \\
-        "{CRON_EVENT_PLANNER_DNS}/api/webhooks/intel-report"
-    Capture the full response body. If the exec call returns a non-zero exit code, print EXACTLY:
-        "FATAL ERROR: Failed to deliver intel report to {CRON_EVENT_PLANNER_DNS}. curl exit code: <exit_code>. Response: <full response body>"
-    Then exit with error status — do NOT mark the run as successful.
+Use the write_file tool to write the JSON payload to /tmp/intel-report.json. Then use `exec` to run:
+curl --fail-with-body --show-error --max-time 30 -X POST -H "Authorization: Bearer {CRON_SECRET_KEY}" -H "Content-Type: application/json" -d @/tmp/intel-report.json "{CRON_EVENT_PLANNER_DNS}/api/webhooks/intel-report"
+If delivery fails, output a FATAL delivery error.
 
 5. LOG
-    Append a summary entry to memory/YYYY-MM-DD.md (create the file if it does not exist;
-    append — do not overwrite). Use this format:
-    ## Performance Log
-    - HH:MM market-intelligence cycle
-    - targets fetched: <N companies, M attendees, K events>
-    - researched: <list of names>
-    - skipped (fresh): <list of names>
-    - POST status: <HTTP status or error>
-    - total: ~Xm
+Append a brief one-line operational summary to `memory/YYYY-MM-DD.md`.
 """
 
 

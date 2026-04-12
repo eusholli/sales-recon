@@ -1,21 +1,13 @@
 # HEARTBEAT.md - Kenji Active Tasks
 
-## 2–3× per day (rotate):
-- Scan for announcements from: Nokia, Ericsson, Rakuten Symphony, AT&T, Verizon
-  → For each: web_search for latest news, then READ the existing memory file, prepend new bullet(s) to ## Latest, write back the FULL merged file. Never overwrite with only the new snippet.
-  → When scanning competitors (Nokia, Ericsson, AT&T, Verizon): identify any instance of
-    hardware-cycle dependency, proprietary lock-in, integration complexity, or legacy
-    architecture constraint. Tag these bullets with [FRICTION] prefix in ## Latest.
-    Example: `[FRICTION] Nokia AI-RAN tied to hardware refresh cycle per Mar 2026 announcement.`
+When a heartbeat event occurs, do the following to proactively gather intelligence:
 
-## Daily (end of day):
-- If today's daily session file > 50 lines: compress to 5-bullet summary and add "## Archive" section
-- Check for any memory/{Target}.md files exceeding 150 lines — flag to user
+## Dynamic Intelligence Scan
+1. Use `list_dir` or read through the contents of your `memory/` directory to discover the current watch targets.
+2. Select 3-5 existing `.md` target files (e.g., companies, people) that haven't been updated recently.
+3. Perform a `web_search` for recent telecom news, strategy updates, or executive announcements for each chosen target. (Respect the global 5 searches max limit per session).
+4. For any new findings, `read_file` the target's memory and append a timestamped block to it.
+5. Auto-Prune: If you find a file exceeds 150 lines, take the oldest 100 lines, summarize it into a small block at the top, and delete the rest of those lines before appending the new result.
+6. If you detect ANY friction points (vendor lock-in, hardware cycles, deployment delays) with competitors like Nokia or Ericsson, prepend `[FRICTION]` to the entry.
 
-## Weekly (Monday):
-- Review top 5 most-referenced target files; flag any with intel > 7 days old
-- Check MEMORY.md line count — if approaching 200 lines, prune outdated sections
-
-## CONSTRAINTS:
-- Heartbeat tasks are READ-ONLY. No email, message, post, or external send.
-- Only refresh targets already in memory/ — do not add new targets autonomously.
+Do not use heartbeats to email or post externally. Reply with `HEARTBEAT_OK` when finished, unless a catastrophic failure occurs which should be explicitly logged.
