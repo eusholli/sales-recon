@@ -116,7 +116,6 @@ openclaw-data/credentials/
 openclaw-data/devices/
 openclaw-data/agents/*/agent/auth-profiles.json
 openclaw-data/agents/*/agent/auth.json
-# NOTE: exec-approvals.json is purposely TRACKED to sync approvals to Hetzner
 
 # --- RUNTIME & EPHEMERAL DATA ---
 openclaw-data/memory/
