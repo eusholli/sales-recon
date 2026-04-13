@@ -23,6 +23,8 @@ services:
       BRAVE_API_KEY: ${BRAVE_API_KEY}
       FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY}
       GPTZERO_API_KEY: ${GPTZERO_API_KEY}
+      CRON_EVENT_PLANNER_DNS: ${CRON_EVENT_PLANNER_DNS}
+      CRON_SECRET_KEY: ${CRON_SECRET_KEY}
       DEBUG: "openclaw:*"
     volumes:
       - ${OPENCLAW_CONFIG_DIR}:/home/node/.openclaw
