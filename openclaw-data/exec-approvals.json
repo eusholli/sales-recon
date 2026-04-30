@@ -11,15 +11,15 @@
         {
           "id": "610295ba-8511-4123-9664-c7f15ededbb9",
           "pattern": "/usr/bin/cat",
-          "lastUsedAt": 1776052607982,
-          "lastUsedCommand": "cat /tmp/intel-report-adhoc.json",
+          "lastUsedAt": 1776769384233,
+          "lastUsedCommand": "cat /tmp/intel-report.json",
           "lastResolvedPath": "/usr/bin/cat"
         },
         {
           "id": "f4119eda-6ac4-405d-b257-20a33626c013",
           "pattern": "/usr/bin/ls",
-          "lastUsedAt": 1776053940950,
-          "lastUsedCommand": "ls memory/Alex_Smith.md memory/Antevia.md",
+          "lastUsedAt": 1777421106986,
+          "lastUsedCommand": "ls /home/node/.openclaw/workspace/memory",
           "lastResolvedPath": "/usr/bin/ls"
         },
         {
@@ -32,8 +32,8 @@
           "id": "1e1e3dab-d362-4858-b30c-2c65010c06c1",
           "pattern": "/usr/bin/curl",
           "source": "allow-always",
-          "lastUsedAt": 1776014591738,
-          "lastUsedCommand": "curl --fail-with-body --show-error --max-time 30 -X POST -H \"Authorization: Bearer 6d70837bd6d63f8424066ffbb6804a180e95b48e1281487adeb07f43f72c9c33\" -H \"Content-Type: application/json\" -d @/tmp/intel-report.json \"http://host.docker.internal:3000/api/webhooks/intel-report\"",
+          "lastUsedAt": 1777374241062,
+          "lastUsedCommand": "curl --fail-with-body --show-error --max-time 30 -X POST -H \"Authorization: Bearer 6d70837bd6d63f8424066ffbb6804a180e95b48e1281487adeb07f43f72c9c33\" -H \"Content-Type: application/json\" -d @/tmp/intel-report.json \"https://events.maximh.us/api/webhooks/intel-report\"",
           "lastResolvedPath": "/usr/bin/curl"
         },
         {
@@ -46,8 +46,8 @@
           "id": "c7d8e9f0-a1b2-4c3d-8e4f-567890abcdef",
           "pattern": "/usr/bin/python3",
           "source": "allow-always",
-          "lastUsedAt": 1776053958537,
-          "lastUsedCommand": "python3 /home/node/.openclaw/workspace/sync_db.py /tmp/intel-report-adhoc-alex.json",
+          "lastUsedAt": 1777421122976,
+          "lastUsedCommand": "python3 /home/node/.openclaw/workspace/sync_db.py /tmp/intel-report-adhoc.json",
           "lastResolvedPath": "/usr/bin/python3"
         }
       ]
