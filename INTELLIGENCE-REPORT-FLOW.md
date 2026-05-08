@@ -162,55 +162,63 @@ If the curl exit code is non-zero, or the response is not valid JSON, the agent 
 
 This is the core intelligence-gathering step. The agent processes companies, attendees, and events in sequence.
 
-### Memory File Locations
+### Memory Storage (gbrain)
 
-All research is persisted in the OpenClaw workspace filesystem, mounted as a Docker volume at:
+Research is persisted in the **gbrain** knowledge brain — Postgres+pgvector
+running in the `sales-recon-postgres` container, exposed to the agent through
+the `gbrain` MCP server registered in `openclaw-data/mcporter.json`. The
+legacy `openclaw-data/workspace/memory/*.md` directory is no longer the
+source of truth; it remains read-only for a short transition window only.
 
-```
-sales-recon/openclaw-data/workspace/memory/
-```
+Slug convention (used for `gbrain.get_page` / `gbrain.put_page`):
 
-File naming: spaces → underscores, e.g.:
+- companies → `companies/<slug>` (e.g. `companies/nokia`)
+- people → `people/<slug>` (e.g. `people/timo-ihamuotila`)
+- events → `events/<slug>` (e.g. `events/futurenet-world-2026`)
 
-- `Nokia.md`
-- `Timo_Ihamuotila.md`
-- `FutureNet_World_2026.md`
-- `Rakuten_Symphony.md`
+Slugs are lowercase and hyphenated. The Rakuten Symphony capability page
+lives at `companies/rakuten-symphony` and is retrieved via `gbrain.query`
+rather than read as a single file.
 
-### Canonical Memory File Structure
+### Page Body and Timeline
 
-Every memory file follows this exact four-section layout:
+Each page stores a markdown body (free-form profile / decision makers /
+narrative) plus a structured `timeline_entries` table — each entry has
+`{date, source, detail}`. New dated findings are added as timeline entries
+on every `gbrain.put_page` call. There is no longer a `## Latest` /
+`## Archive` split; recency is encoded in `timeline_entries.date` and
+surfaced via gbrain's recency boost during search.
 
-```markdown
-## Latest
-- **2026-04-08** — [Most recent finding, newest first]
-- **2026-04-01** — [Previous finding]
-(max 20 lines; older entries move to Archive)
+The `[FRICTION]` tag is still prepended to any timeline detail that
+identifies a hardware-cycle dependency, proprietary lock-in, integration
+complexity, or legacy architecture — these are explicit sales opportunity
+signals and gbrain ranks them via the salience boost.
 
-## Profile
-[Static bio / company overview. Only updated when facts genuinely change.]
+Example timeline entry:
 
-## Key Decision Makers  ← companies only
-| Name | Role | Recent Topic |
-|------|------|-------------|
-| Timo Ihamuotila | CFO | Cost-cutting, capex review |
-
-## Archive
-[Older Latest entries, moved here once Latest exceeds 20 lines]
-```
-
-The `[FRICTION]` tag is prepended to any entry that identifies a hardware-cycle dependency, proprietary lock-in, integration complexity, or legacy architecture — these are explicit sales opportunity signals.
-
-Example:
-
-```
-- **2026-04-08** — [FRICTION] Nokia's AI-RAN roadmap requires dedicated Marvell OCTEON silicon;
-  software-defined alternatives not yet qualified on their preferred hardware
+```json
+{
+  "date": "2026-04-08",
+  "source": "https://example.com/nokia-ai-ran",
+  "detail": "[FRICTION] Nokia's AI-RAN roadmap requires dedicated Marvell OCTEON silicon; software-defined alternatives not yet qualified on their preferred hardware"
+}
 ```
 
 ### Freshness Check
 
-Before any web search, the agent reads the existing memory file. If `## Latest` contains an entry dated within the **last 48 hours**, the target is marked `skipped-fresh` and no web search is run. The memory file is still available for payload construction.
+Before any web search, the agent calls `gbrain.get_page(slug)`. If
+`page.updated_at` is within the **last 48 hours**, the target is marked
+`skipped-fresh` and no web search is run. The page contents are still
+available for payload construction.
+
+### Auto-Linking and Maintenance
+
+Every `gbrain.put_page` call auto-extracts entity references from the body
+and reconciles typed links (`works_at`, `attended`, `mentions`) without any
+explicit link tool call from the agent. The nightly `gbrain cycle run`
+(registered via `event-planner-cron.py` as `gbrain-dream-cycle-nightly`)
+handles embedding refresh, salience recompute, soft-delete purge, and
+overnight synthesis. There is no manual archive rotation or 150-line trim.
 
 ### Per-Company Research
 
@@ -244,20 +252,23 @@ For events, the agent also individually researches each attendee listed in `even
 
 ### Memory Update Protocol
 
-After research, the agent updates the memory file with strict merge rules to prevent data loss:
+After research, the agent calls `gbrain.put_page` with:
 
-1. **Read** the existing file first
-2. **Prepend** new findings as bullet(s) at the TOP of `## Latest`
-3. If `## Latest` now exceeds 20 lines, move oldest entries to the bottom of `## Archive`
-4. **Write back the complete merged file** (all four sections intact)
+1. The slug (`companies/<slug>` etc.)
+2. The full markdown body (profile / decision makers / narrative — gbrain
+   computes the diff against the previous version internally; the agent
+   sends the latest complete body)
+3. A `timeline_entries` array containing only the **new** dated findings
 
-On write failure, retry once. If it fails again, log the error and continue to the next target — do not abort the run.
+gbrain's write path is transactional, so partial-write data loss is not
+possible. On a tool error, retry once; if it fails again, log the error and
+continue to the next target — do not abort the run.
 
 ---
 
 ## 6. Step 3 — Build the JSON Payload
 
-Before generating any sales angles, the agent reads `memory/Rakuten_Symphony.md` and extracts the 3–5 most recent bullets from `## Latest`. These represent Rakuten Symphony's **current** strategic positioning and recent announcements.
+Before generating any sales angles, the agent calls `gbrain.query("Rakuten Symphony capabilities relevant to <target>")`. gbrain's hybrid search (BM25 + vector + graph + recency) returns the most relevant chunks of the `companies/rakuten-symphony` page (and any related concept pages) ranked for the specific target — this replaces reading a single static `memory/Rakuten_Symphony.md` file.
 
 ### Per-Target Fields
 

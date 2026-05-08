@@ -6,6 +6,7 @@
 node_modules
 **/node_modules/
 .env*
+!.env.example
 letsencrypt/
 *.pem
 *.key
@@ -74,6 +75,7 @@ apps/ios/*.mobileprovision
 
 # --- Local untracked files & tooling ---
 .local/
+.claude/
 docs/.local/
 IDENTITY.md
 USER.md
@@ -116,6 +118,9 @@ openclaw-data/credentials/
 openclaw-data/devices/
 openclaw-data/agents/*/agent/auth-profiles.json
 openclaw-data/agents/*/agent/auth.json
+# Runtime state — records the agent's lastUsedCommand which may include
+# Bearer tokens etc. Must never be tracked.
+openclaw-data/exec-approvals.json
 
 # --- RUNTIME & EPHEMERAL DATA ---
 openclaw-data/memory/

@@ -1,4 +1,22 @@
 services:
+  sales-recon-postgres:
+    container_name: sales-recon-postgres
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gbrain
+      POSTGRES_PASSWORD: ${GBRAIN_POSTGRES_PASSWORD}
+      POSTGRES_DB: gbrain
+    volumes:
+      - sales-recon-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gbrain -d gbrain"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sales-recon-net
+
   sales-recon-openclaw:
     container_name: sales-recon-openclaw
     build:
@@ -6,15 +24,23 @@ services:
       args:
         - ${OPENCLAW_DOCKER_APT_PACKAGES}
     image: sales-recon-openclaw:latest
+    depends_on:
+      sales-recon-postgres:
+        condition: service_healthy
     environment:
       HOME: /home/node
       TERM: xterm-256color
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       OPENCLAW_GATEWAY_BIND: "0.0.0.0"
       OPENCLAW_GATEWAY_AUTO_APPROVE: "false"
+      DATABASE_URL: "postgres://gbrain:${GBRAIN_POSTGRES_PASSWORD}@sales-recon-postgres:5432/gbrain"
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # gbrain expects GOOGLE_GENERATIVE_AI_API_KEY for Gemini embeddings (768
+      # dims). Alias from the existing GEMINI_API_KEY so users only manage one.
+      GOOGLE_GENERATIVE_AI_API_KEY: ${GEMINI_API_KEY}
+      PATH: /home/node/.bun/bin:/home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       npm_config_cache: /tmp/npm-cache
       NPM_CONFIG_PREFIX: /home/node/.npm-global
-      PATH: /home/node/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       XAI_API_KEY: ${XAI_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       MOONSHOT_API_KEY: ${MOONSHOT_API_KEY}
@@ -61,6 +87,9 @@ services:
       - webproxy
     depends_on:
       - sales-recon-openclaw
+
+volumes:
+  sales-recon-pgdata:
 
 networks:
   sales-recon-net:
