@@ -42,6 +42,18 @@ else
     echo "[entrypoint] skipping gbrain init (DATABASE_URL unset or gbrain missing)"
 fi
 
+# Seed exec-approval allowlist patterns for the autonomous cron agent so it
+# can run python3 (sync_db.py), curl (event-planner webhook), and gbrain
+# (nightly dream cycle) without an interactive approval prompt. Idempotent:
+# `allowlist add` is a no-op if the pattern is already present.
+if [ -f /app/dist/index.js ]; then
+    for pattern in /usr/bin/python3 /usr/bin/curl /home/node/gbrain/bin/gbrain; do
+        echo "[entrypoint] allowlisting $pattern for agent main"
+        node /app/dist/index.js approvals allowlist add --agent main "$pattern" \
+            || echo "[entrypoint] WARNING: allowlist add failed for $pattern; continuing"
+    done
+fi
+
 if [ -f "/docker-entrypoint.sh" ]; then
     exec /docker-entrypoint.sh "$@"
 else
