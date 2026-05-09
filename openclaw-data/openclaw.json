@@ -1,7 +1,7 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.4.9",
-    "lastTouchedAt": "2026-05-08T22:55:41.314Z"
+    "lastTouchedAt": "2026-05-09T00:20:00.200Z"
   },
   "wizard": {
     "lastRunAt": "2026-03-10T16:25:33.647Z",
@@ -189,7 +189,14 @@
               "touch",
               "mkdir",
               "rm",
-              "trash"
+              "trash",
+              "ls",
+              "pwd",
+              "head",
+              "tail",
+              "wc",
+              "grep",
+              "find"
             ],
             "safeBinProfiles": {
               "curl": {},
@@ -199,7 +206,14 @@
               "touch": {},
               "mkdir": {},
               "rm": {},
-              "trash": {}
+              "trash": {},
+              "ls": {},
+              "pwd": {},
+              "head": {},
+              "tail": {},
+              "wc": {},
+              "grep": {},
+              "find": {}
             }
           }
         }
@@ -334,7 +348,7 @@
   "mcp": {
     "servers": {
       "gbrain": {
-        "command": "/home/node/gbrain/bin/gbrain",
+        "command": "/home/node/.bun/bin/gbrain",
         "args": [
           "serve"
         ],

@@ -91,7 +91,7 @@ recommendedAction MUST BE a concrete sales-related next step.
     "summary": "<2–3 sentence update>",
     "salesAngle": "<1 sentence referencing a specific RS initiative against target situation>",
     "recommendedAction": "<1-sentence time-sensitive next step, omit if no clear trigger>",
-    "fullReport": "<The new timestamped findings you generated to append to memory>"
+    "fullReport": "<The new timestamped findings stored in gbrain>"
     }}
 ]
 }}
