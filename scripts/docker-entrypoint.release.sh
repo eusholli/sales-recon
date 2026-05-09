@@ -62,16 +62,36 @@ echo "[entrypoint] probing gbrain binary at registered path"
 "$GBRAIN_BIN" --version >/dev/null
 
 # Seed exec-approval allowlist patterns for the autonomous cron agent so it
-# can run python3 (sync_db.py), curl (event-planner webhook), and gbrain
-# (nightly dream cycle) without an interactive approval prompt. Idempotent:
-# `allowlist add` is a no-op if the pattern is already present. Soft-fail
-# is acceptable here — failing to allowlist only forces interactive approval
-# at agent-run time, it does not break the MCP plumbing.
-for pattern in /usr/bin/python3 /usr/bin/curl "$GBRAIN_BIN"; do
-    echo "[entrypoint] allowlisting $pattern for agent main"
-    node /app/dist/index.js approvals allowlist add --agent main "$pattern" \
-        || echo "[entrypoint] WARNING: allowlist add failed for $pattern; continuing"
+# can run the binaries it needs without an interactive approval prompt.
+# Under `tools.exec.security: "allowlist"` the safeBins list in openclaw.json
+# is decorative — only entries seeded here are actually permitted, so this
+# loop must mirror safeBins. `allowlist add` is idempotent. Soft-fail is
+# acceptable: it only forces interactive approval at agent-run time.
+# Builtins (echo, pwd) intentionally excluded: `sh -c` resolves them via the
+# shell builtin and they never hit the exec allowlist; `command -v` also
+# returns the bare word for them, which would seed a junk entry.
+SEED_BINS="python3 curl sleep cat touch mkdir rm trash ls head tail wc grep find"
+for bin in $SEED_BINS; do
+    resolved="$(command -v "$bin" || true)"
+    if [ -z "$resolved" ]; then
+        echo "[entrypoint] WARNING: $bin not on PATH; skipping allowlist seed"
+        continue
+    fi
+    case "$resolved" in
+        /*) ;;
+        *)
+            echo "[entrypoint] WARNING: $bin resolved to non-absolute '$resolved' (likely a shell builtin); skipping"
+            continue
+            ;;
+    esac
+    echo "[entrypoint] allowlisting $resolved for agent main"
+    node /app/dist/index.js approvals allowlist add --agent main "$resolved" \
+        || echo "[entrypoint] WARNING: allowlist add failed for $resolved; continuing"
 done
+
+echo "[entrypoint] allowlisting $GBRAIN_BIN for agent main"
+node /app/dist/index.js approvals allowlist add --agent main "$GBRAIN_BIN" \
+    || echo "[entrypoint] WARNING: allowlist add failed for $GBRAIN_BIN; continuing"
 
 if [ -f "/docker-entrypoint.sh" ]; then
     exec /docker-entrypoint.sh "$@"

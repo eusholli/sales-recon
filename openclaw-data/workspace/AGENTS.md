@@ -5,7 +5,7 @@ This folder is home. Treat it that way.
 ## Core Directives
 1. **Never Fail Silently**: If a search error occurs, a tool fails, or you cannot fetch information, ALWAYS output an explicit error message in your response. Be noisy about failures.
 2. **Search Loop Limit & RATE LIMIT**: You MUST NOT perform more than 5 web searches per request/session. You MUST run searches sequentially with a 2 second delay between calls to avoid hitting the 1 request/sec rate limit. Do not run tools in parallel.
-3. **Delivery Guarantee**: When conducting research, output the final JSON payload or synthesized result directly. Never stop prematurely at a status update.
+3. **Delivery Guarantee**: When conducting research, output the final synthesized report directly using the structure in § "Response Format for Intelligence Queries". Never stop prematurely at a status update.
 
 ## Memory Protocol — gbrain is the only research store
 
@@ -29,6 +29,37 @@ Use `gbrain.query("Rakuten Symphony capabilities relevant to <target>")` to retr
 
 ### Naming
 Rakuten Symphony product naming: do NOT use old "SymXXX" terms (e.g. Symworld). Use descriptive terms like "network orchestration platform". Map RS capabilities directly to the target's current pain points.
+
+## Response Format for Intelligence Queries
+
+When the user asks for intelligence on a company, person, or event (e.g. "What is the latest on <X>"), after `gbrain.get_page` / web research / `gbrain.put_page`, your reply to the user MUST use this exact structure:
+
+```
+🦾 <Entity Name> Market Intelligence Update [YYYY-MM-DD]
+
+<One-paragraph thesis: the single most important thing happening at this entity right now.>
+
+🚀 Key Developments
+- **<Headline>:** <1–2 sentence factual update with dates / numbers where available.>
+- ... (3–5 bullets)
+
+⚠️ [FRICTION] Points
+- **<Vulnerability / lock-in / execution risk>:** <1–2 sentences explaining the competitive or operational weakness.>
+- ... (1–3 bullets — this section is mandatory; if no friction is evident, state that explicitly.)
+
+💡 Sales Angle for Rakuten Symphony
+- **The <Hook>:** <One sentence naming the specific opening this creates for RS.>
+- **The Pitch:** <One sentence mapping a concrete RS capability to the entity's pain point. Use descriptive RS terminology — never legacy "SymXXX" names.>
+
+Source: gbrain page `<slug>`. Intelligence has been synced to the Sales Recon DB.
+```
+
+Rules:
+- Use today's date in `[YYYY-MM-DD]`.
+- The `Source:` line references the gbrain slug you wrote (e.g. `companies/at-t`), not a file path.
+- Only append `Intelligence has been synced to the Sales Recon DB.` if you actually POSTed the adhoc webhook in this turn (per § Distribution below). If you only wrote to gbrain, end with `Source: gbrain page <slug>.` and nothing else.
+- This format applies to interactive replies. Heartbeats and cron remain governed by the Distribution and Heartbeat sections.
+- The structure is non-negotiable: do not drop the FRICTION section, do not collapse Key Developments and Sales Angle, do not omit the headline line.
 
 ## Distribution — webhook to event-planner
 
@@ -63,16 +94,16 @@ Build the payload (mirrors the cron format, with `silent: true` and `runId` in a
 - `type`: `"company"` for corporate entities, `"attendee"` for individuals, `"event"` for conferences.
 - `name`: the human-readable entity name.
 
-Use `write_file` to write the payload to `/tmp/intel-report-adhoc.json`, then use `exec` to run:
+Use `write_file` to write the payload to `/tmp/intel-report-adhoc.json`, then use `exec` to run the command **exactly as written below** — always the absolute path, never a shortened relative form like `python3 sync_db.py …`:
 
 ```
-python3 workspace/sync_db.py /tmp/intel-report-adhoc.json
+python3 /home/node/.openclaw/workspace/sync_db.py /tmp/intel-report-adhoc.json
 ```
 
 If delivery fails, output a bold **FATAL database sync error** with the python output. Never fail silently.
 
 ## Research Tools
-- `web_search`: Primary search for B2B tech/telecom intelligence.
+- `web_search`: Primary search for B2B tech/telecom intelligence. **Search must use this tool.** Never shell out via `exec` to invented CLIs like `brave-search`, `tavily`, `sleep && <search-cli>`, or `curl https://search.brave.com/...`. There is no search CLI in the container; `web_search` is the only sanctioned path. If `web_search` fails, surface the failure — do not invent fallbacks.
 - `web_fetch`: URL extraction.
 - `gbrain` MCP server: `get_page`, `put_page`, `query`.
 
