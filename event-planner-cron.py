@@ -28,83 +28,23 @@ if not CRON_SECRET_KEY:
     print("Error: CRON_SECRET_KEY is not set", file=sys.stderr)
     sys.exit(1)
 
-CRON_MSG = f"""You are running an autonomous market intelligence cycle for Rakuten Symphony's event pipeline.
-Follow these steps exactly and in order. Do not skip steps.
+CRON_MSG = """You are the trigger entry for the market-intelligence dispatcher.
+Your only job is to invoke the external Python orchestrator via `exec` and
+report its exit status. Do NOT do any research yourself — the dispatcher
+spawns its own concurrent agent sessions for that.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-MEMORY PROTOCOL (gbrain-backed)
-Research is stored in the gbrain knowledge brain (Postgres+pgvector), exposed
-as the `gbrain` MCP server. Use its tools — do NOT read or write `memory/*.md`
-files for research storage.
+Run this single shell command via the `exec` tool. RUN_ID must be today's
+date in YYYY-MM-DD form, suffixed with `-cron`:
 
-Slug convention:
-- companies → `companies/<slug>` (slug = lowercase, hyphenated, e.g. `companies/rakuten-symphony`)
-- attendees/people → `people/<slug>` (e.g. `people/timo-ihamuotila`)
-- events → `events/<slug>` (e.g. `events/mwc-barcelona-2026`)
+```
+RUN_ID="$(date +%Y-%m-%d)-cron" \\
+  python3 /app/intel-dispatcher.py --run-id "$RUN_ID"
+```
 
-1. Before researching, call `gbrain.get_page` with the slug. If the page does
-   not exist, that's fine — proceed to research and create it.
-2. Freshness gate: skip research if `page.updated_at` is within the last 48
-   hours.
-3. After research, call `gbrain.put_page` with: slug, title, body (markdown),
-   and a `timeline_entries` array `[{{date, source, detail}}, ...]` for new
-   dated findings. gbrain auto-extracts entity links and reconciles the graph
-   on every write — do NOT call any link/extract tool yourself.
-4. There is no manual pruning. The nightly dream cycle handles
-   archive/embeddings/salience.
-5. Rate Limit & Search Cap: You MUST execute `web_search` calls SEQUENTIALLY,
-   never in parallel. Wait 2 seconds between each search. NEVER perform more
-   than 5 `web_search` calls total per run.
-6. Error Reporting: If an error or rate limit happens, never fail silently.
-   Output a bold FATAL error string in the final JSON or log.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. FETCH TARGETS
-Use your terminal/shell tool (`exec`) to run this exact shell command:
-curl --fail-with-body --show-error --max-time 30 -H "Authorization: Bearer {CRON_SECRET_KEY}" "{CRON_EVENT_PLANNER_DNS}/api/intelligence/targets"
-If the curl step fails or returns invalid JSON (e.g. HTML error page), stop immediately and output a FATAL HTTP ERROR string explaining the failure. Do not proceed.
-Filter for active targets (`subscriptionCount > 0`).
-
-2. RESEARCH EACH ACTIVE TARGET
-For each active company, attendee, or event:
-a. Compute the slug per the convention above and call
-   `gbrain.get_page(slug)`.
-b. If the page exists and `page.updated_at` is within the last 48 hours, skip
-   research for this target.
-c. If not fresh (or page is missing), run ONE `web_search` for recent 2026
-   news/agenda/announcements. (Observe the global 5 searches max per session.)
-d. Synthesize the new findings and call `gbrain.put_page` with the slug, the
-   updated body, and `timeline_entries` for any newly dated facts.
-
-3. BUILD PAYLOAD
-You MUST generate the exact JSON format below for targets that had NEW intelligence.
-salesAngle MUST map the target's current situation to a specific Rakuten Symphony capability (avoid generic benefits). Use `gbrain.query("Rakuten Symphony capabilities relevant to <target>")` to retrieve the most relevant RS capability context (this replaces reading a static `memory/Rakuten_Symphony.md`).
-recommendedAction MUST BE a concrete sales-related next step.
-
-{{
-"runId": "YYYY-MM-DD-cron",
-"timestamp": "<ISO 8601>",
-"updatedTargets": [
-    {{
-    "type": "company" | "attendee" | "event",
-    "name": "<exact name from targets>",
-    "summary": "<2–3 sentence update>",
-    "salesAngle": "<1 sentence referencing a specific RS initiative against target situation>",
-    "recommendedAction": "<1-sentence time-sensitive next step, omit if no clear trigger>",
-    "fullReport": "<The new timestamped findings stored in gbrain>"
-    }}
-]
-}}
-If no new updates were found, return an empty `updatedTargets` array.
-
-4. DELIVER
-Use the write_file tool to write the JSON payload to /tmp/intel-report.json. Then use `exec` to run:
-curl --fail-with-body --show-error --max-time 30 -X POST -H "Authorization: Bearer {CRON_SECRET_KEY}" -H "Content-Type: application/json" -d @/tmp/intel-report.json "{CRON_EVENT_PLANNER_DNS}/api/webhooks/intel-report"
-If delivery fails, output a FATAL delivery error.
-
-5. LOG
-Call `gbrain.put_page` with slug `runs/<YYYY-MM-DD>-cron`, body containing a
-brief one-line operational summary plus the runId for traceability.
+If the command exits 0, the run succeeded — report `OK runId=<value>`.
+If exit is non-zero, report `FATAL runId=<value> exit=<code>` and surface the
+last 2 KB of stderr. Do not retry inside this turn; the dispatcher persists
+intermediate state and the next scheduled run will resume.
 """
 
 

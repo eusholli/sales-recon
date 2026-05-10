@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://event-planner/intelligence/target-update.schema.json",
+  "title": "TargetUpdate",
+  "description": "Single intelligence-report entry. Mirrors event-planner/lib/intelligence-schema.ts TargetUpdateSchema. Keep these two in sync.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "name", "summary", "salesAngle", "fullReport"],
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": ["company", "attendee", "event"]
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1, "description": "2-3 sentence update on the entity." },
+    "salesAngle": { "type": "string", "minLength": 1, "description": "1 sentence mapping target situation to a specific Rakuten Symphony capability." },
+    "fullReport": { "type": "string", "minLength": 1, "description": "Markdown body with timestamped findings." },
+    "recommendedAction": { "type": "string", "minLength": 1, "description": "Concrete time-sensitive next step. Omit when no clear trigger." },
+    "highlighted": { "type": "boolean" },
+    "linkedEventName": { "type": "string", "minLength": 1 }
+  }
+}

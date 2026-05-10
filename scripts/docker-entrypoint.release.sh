@@ -65,8 +65,13 @@ echo "[entrypoint] probing gbrain binary at registered path"
 # can run the binaries it needs without an interactive approval prompt.
 # Under `tools.exec.security: "allowlist"` the safeBins list in openclaw.json
 # is decorative — only entries seeded here are actually permitted, so this
-# loop must mirror safeBins. `allowlist add` is idempotent. Soft-fail is
-# acceptable: it only forces interactive approval at agent-run time.
+# loop must mirror safeBins. `allowlist add` is idempotent.
+#
+# Hard-fail rule: any failure here leaves the cron agent unable to exec the
+# tools it depends on (curl for webhook delivery, python3 for the dispatcher,
+# gbrain for memory). A degraded container is worse than a failed deploy —
+# matches the existing gbrain-init hard-fail rule. Do not soft-fail.
+#
 # Builtins (echo, pwd) intentionally excluded: `sh -c` resolves them via the
 # shell builtin and they never hit the exec allowlist; `command -v` also
 # returns the bare word for them, which would seed a junk entry.
@@ -74,24 +79,28 @@ SEED_BINS="python3 curl sleep cat touch mkdir rm trash ls head tail wc grep find
 for bin in $SEED_BINS; do
     resolved="$(command -v "$bin" || true)"
     if [ -z "$resolved" ]; then
-        echo "[entrypoint] WARNING: $bin not on PATH; skipping allowlist seed"
-        continue
+        echo "[entrypoint] FATAL: required bin '$bin' not on PATH" >&2
+        exit 1
     fi
     case "$resolved" in
         /*) ;;
         *)
-            echo "[entrypoint] WARNING: $bin resolved to non-absolute '$resolved' (likely a shell builtin); skipping"
-            continue
+            echo "[entrypoint] FATAL: '$bin' resolved to non-absolute '$resolved' (likely a shell builtin); cannot seed allowlist" >&2
+            exit 1
             ;;
     esac
     echo "[entrypoint] allowlisting $resolved for agent main"
-    node /app/dist/index.js approvals allowlist add --agent main "$resolved" \
-        || echo "[entrypoint] WARNING: allowlist add failed for $resolved; continuing"
+    if ! node /app/dist/index.js approvals allowlist add --agent main "$resolved"; then
+        echo "[entrypoint] FATAL: allowlist add failed for $resolved" >&2
+        exit 1
+    fi
 done
 
 echo "[entrypoint] allowlisting $GBRAIN_BIN for agent main"
-node /app/dist/index.js approvals allowlist add --agent main "$GBRAIN_BIN" \
-    || echo "[entrypoint] WARNING: allowlist add failed for $GBRAIN_BIN; continuing"
+if ! node /app/dist/index.js approvals allowlist add --agent main "$GBRAIN_BIN"; then
+    echo "[entrypoint] FATAL: allowlist add failed for $GBRAIN_BIN" >&2
+    exit 1
+fi
 
 if [ -f "/docker-entrypoint.sh" ]; then
     exec /docker-entrypoint.sh "$@"

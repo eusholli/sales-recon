@@ -56,6 +56,31 @@ function stripThinkingBlocks(content) {
     return content.replace(/<(?:think|thinking)[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi, '').trim();
 }
 
+// Extract the structured TargetUpdate emitted at the end of an entity-grounded
+// chat turn. Convention (enforced via the user-message wrapper in
+// sendToOpenClaw): the agent ends its reply with a fenced JSON block tagged
+// STRUCTURED_REPORT containing a TargetUpdate object. Returns the parsed
+// object on success, or null when the block is absent / malformed — chat turns
+// without an entity (e.g. clarifying questions) legitimately have no report.
+const STRUCTURED_REPORT_REGEX = /```json\s+STRUCTURED_REPORT\s*([\s\S]*?)```/i;
+function extractStructuredReport(content) {
+    if (!content) return null;
+    const match = content.match(STRUCTURED_REPORT_REGEX);
+    if (!match) return null;
+    try {
+        const parsed = JSON.parse(match[1]);
+        if (!parsed || typeof parsed !== 'object') return null;
+        const requiredFields = ['type', 'name', 'summary', 'salesAngle', 'fullReport'];
+        for (const f of requiredFields) {
+            if (typeof parsed[f] !== 'string' || parsed[f].length === 0) return null;
+        }
+        if (!['company', 'attendee', 'event'].includes(parsed.type)) return null;
+        return parsed;
+    } catch {
+        return null;
+    }
+}
+
 // Extract plain text from an OpenClaw message object
 // Handles: string content, content-array [{type:'text', text}], or .text field
 function extractMessageContent(message) {
@@ -418,7 +443,13 @@ function handleOpenClawMessage(msg) {
                 assistantBuffers.set(sessionKey, fallbackMsg);
             }
 
-            broadcastToSession(sessionKey, { type: 'final' });
+            // Surface the structured TargetUpdate (when the agent emitted one)
+            // so the chat UI can render the same header card as the cron-batch
+            // path. Absence is non-fatal: clarifying-question turns have no
+            // report.
+            const finalBuf = assistantBuffers.get(sessionKey) || '';
+            const report = extractStructuredReport(finalBuf);
+            broadcastToSession(sessionKey, report ? { type: 'final', report } : { type: 'final' });
             assistantBuffers.delete(sessionKey);
 
             // Clean up the pending request for this session
@@ -451,9 +482,29 @@ function sendToOpenClaw(browserWs, sessionKey, message, entityType, entityName) 
     const sessionCtx = session?.sessionCtx ?? null;
     const eventIdForCtx = session?.eventId ?? null;
 
+    // When grounded on a specific entity, ask the agent to emit a structured
+    // TargetUpdate at the end of its reply so the chat UI can render the same
+    // header card as the cron-batch path. The schema mirrors
+    // event-planner/lib/intelligence-schema.ts and
+    // sales-recon/prompts/target-update.schema.json. Keep the regex parser in
+    // extractStructuredReport() in sync if the fence tag changes.
+    const STRUCTURED_REPORT_INSTRUCTIONS = `
+
+After your normal markdown reply, append a final fenced JSON block tagged STRUCTURED_REPORT containing a TargetUpdate object that summarizes the intel. Required fields: "type" ("company"|"attendee"|"event"), "name", "summary" (2-3 sentences), "salesAngle" (1 sentence citing a Rakuten Symphony capability), "fullReport" (the markdown body of your reply). Optional: "recommendedAction" (concrete next step). Format exactly:
+
+\`\`\`json STRUCTURED_REPORT
+{ "type": "...", "name": "...", "summary": "...", "salesAngle": "...", "fullReport": "...", "recommendedAction": "..." }
+\`\`\`
+
+If the user only asked a clarifying question and you did not produce fresh intel this turn, omit the STRUCTURED_REPORT block entirely.`;
+
+    // Always append STRUCTURED_REPORT_INSTRUCTIONS so the chat agent emits the
+    // structured TargetUpdate block; the directive itself tells the agent to
+    // omit the block on pure clarifying-question turns. Entity grounding prefix
+    // is only added when the caller supplied entityType+entityName.
     let baseMessage = entityType && entityName
-        ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}`
-        : message;
+        ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}${STRUCTURED_REPORT_INSTRUCTIONS}`
+        : `${message}${STRUCTURED_REPORT_INSTRUCTIONS}`;
 
     // Append ActionCtx for OpenClaw to access webapp DB
     let fullMessage = baseMessage;

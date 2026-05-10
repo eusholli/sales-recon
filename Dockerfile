@@ -3,7 +3,7 @@ FROM ghcr.io/openclaw/openclaw:2026.4.9
 USER root
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates curl unzip \
+    && apt-get install -y --no-install-recommends git ca-certificates curl unzip trash-cli \
     && rm -rf /var/lib/apt/lists/*
 
 USER node
@@ -31,6 +31,12 @@ RUN gbrain --version
 USER root
 COPY scripts/docker-entrypoint.release.sh /usr/local/bin/sales-recon-entrypoint.sh
 RUN chmod +x /usr/local/bin/sales-recon-entrypoint.sh
+# Dispatcher + prompt assets used by the autonomous intel cron job. Copied
+# into the image (not volume-mounted) so a deploy ships the dispatcher and
+# its prompts atomically.
+COPY intel-dispatcher.py /app/intel-dispatcher.py
+COPY prompts /app/prompts
+RUN chmod +x /app/intel-dispatcher.py
 USER node
 
 WORKDIR /app
