@@ -12,9 +12,6 @@ Targets in this batch (process every one):
 {{TARGETS_JSON}}
 ```
 
-Output file path (write your final result here, atomically):
-{{OUTPUT_PATH}}
-
 Output schema — every entry in the array MUST conform to this JSON Schema:
 ```json
 {{SCHEMA_JSON}}
@@ -45,19 +42,20 @@ For EACH target in the batch:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DELIVERY
 
-When all targets in this batch are processed, you MUST write the array to
-{{OUTPUT_PATH}} atomically. Use the `exec` tool to run:
+When all targets in this batch are processed, end your reply by emitting the
+JSON array between the literal sentinel markers below. The dispatcher parses
+your stdout and writes the file itself — DO NOT call the `exec` tool to
+write files; the allowlist denies shell redirects and `mkdir`/`cat`/`mv`
+heredocs, and your delivery will be lost.
 
-```
-mkdir -p "$(dirname '{{OUTPUT_PATH}}')" && \
-cat > '{{OUTPUT_PATH}}.tmp' <<'JSON_EOF'
-<the JSON array, exactly>
-JSON_EOF
-mv '{{OUTPUT_PATH}}.tmp' '{{OUTPUT_PATH}}'
-```
+Format (markers must appear on their own lines, no code fence):
 
-The dispatcher polls for {{OUTPUT_PATH}} after your turn ends; if the file is
-missing or unparseable the batch is marked failed. Do not skip this step.
+<BATCH_OUTPUT>
+[ ...the JSON array, one TargetUpdate per target in this batch... ]
+</BATCH_OUTPUT>
+
+If the markers are missing or the JSON between them does not parse as an
+array, the batch is marked failed.
 
 If you encounter an unrecoverable error for a SINGLE target (e.g. the entity
 genuinely has no public information), still emit a TargetUpdate for it with

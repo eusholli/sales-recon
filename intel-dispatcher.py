@@ -194,14 +194,23 @@ def build_batch_prompt(template: str, schema_json: str, batch_idx: int, output_p
     )
 
 
+BATCH_OUTPUT_RE = re.compile(r"<BATCH_OUTPUT>\s*(\[.*?\])\s*</BATCH_OUTPUT>", re.DOTALL)
+
+
+def atomic_write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, path)
+
+
 async def run_agent_batch(batch_idx: int, targets: list[Target], run_id: str, run_dir: Path,
                           rate_limiter: "TokenBucket", schema_json: str, prompt_template: str) -> tuple[int, list[dict[str, Any]] | None, str | None]:
     """Run one OpenClaw agent session for a batch. Returns (batch_idx, targets_json|None, error|None)."""
-    output_path = str(run_dir / f"batch-{batch_idx:04d}.agent.json")
-    prompt = build_batch_prompt(prompt_template, schema_json, batch_idx, output_path, targets)
+    output_file = run_dir / f"batch-{batch_idx:04d}.agent.json"
+    prompt = build_batch_prompt(prompt_template, schema_json, batch_idx, str(output_file), targets)
 
     # Resume: if output already present and parses, skip the agent call.
-    output_file = Path(output_path)
     if output_file.exists():
         try:
             data = json.loads(output_file.read_text())
@@ -219,7 +228,6 @@ async def run_agent_batch(batch_idx: int, targets: list[Target], run_id: str, ru
         "--agent", "main",
         "--session-id", session_id,
         "--message", prompt,
-        "--json",
         "--timeout", str(AGENT_TIMEOUT_S),
     ]
 
@@ -238,20 +246,23 @@ async def run_agent_batch(batch_idx: int, targets: list[Target], run_id: str, ru
             await proc.wait()
             raise RuntimeError(f"agent batch timed out after {AGENT_TIMEOUT_S}s")
         elapsed = time.monotonic() - started
+        stdout_text = stdout_b.decode("utf-8", errors="replace") or ""
         if proc.returncode != 0:
             err_tail = (stderr_b.decode("utf-8", errors="replace") or "")[-2000:]
             raise RuntimeError(f"agent exit {proc.returncode}: {err_tail}")
 
-        if not output_file.exists():
-            stdout_tail = (stdout_b.decode("utf-8", errors="replace") or "")[-2000:]
-            raise RuntimeError(f"agent did not write expected output {output_path}; stdout tail: {stdout_tail}")
+        match = BATCH_OUTPUT_RE.search(stdout_text)
+        if not match:
+            tail = stdout_text[-2000:]
+            raise RuntimeError(f"agent reply missing <BATCH_OUTPUT> markers; stdout tail: {tail}")
         try:
-            data = json.loads(output_file.read_text())
+            data = json.loads(match.group(1))
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"agent wrote unparseable JSON at {output_path}: {exc}")
+            raise RuntimeError(f"agent emitted unparseable JSON between markers: {exc}")
         if not isinstance(data, list):
-            raise RuntimeError(f"agent output at {output_path} is not a JSON array")
+            raise RuntimeError("agent output between markers is not a JSON array")
 
+        atomic_write_json(output_file, data)
         log("info", "agent batch ok", batchIdx=batch_idx, targets=len(data), elapsedS=round(elapsed, 1))
         return (batch_idx, data, None)
     except Exception as exc:
@@ -442,7 +453,7 @@ async def run(run_id: str, limit: int | None, no_webhook: bool, silent_only: boo
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Sales-recon intelligence dispatcher")
-    p.add_argument("--run-id", required=True, help="Run identifier, e.g. 2026-05-12-cron")
+    p.add_argument("--run-id", default=None, help="Run identifier; defaults to YYYY-MM-DD-cron")
     p.add_argument("--limit", type=int, default=None, help="Cap number of targets (smoke testing)")
     p.add_argument("--no-webhook", action="store_true", help="Skip all webhook POSTs")
     p.add_argument("--silent-only", action="store_true", help="POST per-batch silent only; skip final notify")
@@ -460,8 +471,10 @@ def main() -> int:
     signal.signal(signal.SIGTERM, _on_term)
     signal.signal(signal.SIGINT, _on_term)
 
+    run_id = args.run_id or f"{time.strftime('%Y-%m-%d', time.gmtime())}-cron"
+
     try:
-        return asyncio.run(run(args.run_id, args.limit, args.no_webhook, args.silent_only))
+        return asyncio.run(run(run_id, args.limit, args.no_webhook, args.silent_only))
     except Exception as exc:
         log("fatal", "dispatcher crashed", error=str(exc))
         return 1

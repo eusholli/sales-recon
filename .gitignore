@@ -151,6 +151,9 @@ openclaw-data/workspace/memory/
 openclaw-data/workspace-tavily/memory/
 openclaw-data/workspace-long-context/memory/
 
+# --- INTEL DISPATCHER RUNTIME OUTPUT ---
+openclaw-data/workspace/intel-jobs/
+
 # Explicitly ignored research artifacts
 openclaw-data/workspace/AT&T_Sales_Intelligence_2026.md
 openclaw-data/workspace/Krishna_Rao.md

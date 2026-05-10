@@ -33,18 +33,26 @@ Your only job is to invoke the external Python orchestrator via `exec` and
 report its exit status. Do NOT do any research yourself — the dispatcher
 spawns its own concurrent agent sessions for that.
 
-Run this single shell command via the `exec` tool. RUN_ID must be today's
-date in YYYY-MM-DD form, suffixed with `-cron`:
+Run this single shell command via the `exec` tool exactly as written —
+no env-var prefix, no `$(...)` substitution, no quoting tricks. The
+allowlist denies anything with shell metacharacters or env-var
+assignment, so the command must be a plain `python3` invocation with
+literal argv only:
 
 ```
-RUN_ID="$(date +%Y-%m-%d)-cron" \\
-  python3 /app/intel-dispatcher.py --run-id "$RUN_ID"
+python3 /app/intel-dispatcher.py
 ```
 
-If the command exits 0, the run succeeded — report `OK runId=<value>`.
-If exit is non-zero, report `FATAL runId=<value> exit=<code>` and surface the
-last 2 KB of stderr. Do not retry inside this turn; the dispatcher persists
-intermediate state and the next scheduled run will resume.
+The dispatcher will compute today's run-id itself (`YYYY-MM-DD-cron`).
+It does the research itself by spawning concurrent agent sessions. You
+MUST NOT do any research, mkdir, cat, or file writes yourself — those
+will be denied by the allowlist.
+
+If the command exits 0, the run succeeded — report `OK runId=<value>`
+(extract the runId from the dispatcher's stdout `dispatch start` log line).
+If exit is non-zero, report `FATAL runId=<value> exit=<code>` and surface
+the last 2 KB of stderr. Do not retry inside this turn; the dispatcher
+persists intermediate state and the next scheduled run will resume.
 """
 
 
