@@ -1,0 +1,314 @@
+/**
+ * viber-proxy — HTTP webhook bridge between Viber Bot API and OpenClaw.
+ *
+ * Mirrors the OpenClaw side of ws-proxy/index.js, but accepts Viber webhook
+ * deliveries instead of browser WS connections. Each inbound user message is
+ * mapped to a clerk userId via the event-planner webapp, an action token is
+ * minted server-side, and the message is dispatched to OpenClaw using the same
+ * sessionKey convention as the browser surface so chat history stays merged.
+ */
+
+import express from 'express';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { LRUCache } from './lru.js';
+import { verifyViberSignature } from './signature.js';
+import { ViberClient } from './viber-client.js';
+import { OpenClawClient } from './openclaw-client.js';
+import { loadOrCreateDeviceIdentity } from './device.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const PORT = parseInt(process.env.PORT || '8081', 10);
+const OPENCLAW_URL = process.env.OPENCLAW_URL || 'ws://sales-recon-openclaw:50045';
+const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN;
+// In mock mode, fall back to a fixed local-test secret so local-test.sh can
+// sign synthetic webhooks without a real Viber bot token.
+const VIBER_BOT_TOKEN = process.env.VIBER_BOT_TOKEN
+    || (process.env.MOCK_VIBER_OUTBOUND === 'true' ? 'local-test-token' : '');
+const VIBER_BOT_NAME = process.env.VIBER_BOT_NAME || 'Sales-Recon';
+const VIBER_BOT_AVATAR_URL = process.env.VIBER_BOT_AVATAR_URL || '';
+const WEBAPP_URL = (process.env.WEBAPP_URL || '').replace(/\/$/, '');
+const CRON_SECRET_KEY = process.env.CRON_SECRET_KEY;
+const MOCK_VIBER_OUTBOUND = process.env.MOCK_VIBER_OUTBOUND === 'true';
+
+if (!OPENCLAW_TOKEN) {
+    console.error('[viber-proxy] OPENCLAW_TOKEN env var is required');
+    process.exit(1);
+}
+if (!VIBER_BOT_TOKEN && !MOCK_VIBER_OUTBOUND) {
+    console.error('[viber-proxy] VIBER_BOT_TOKEN env var is required (or set MOCK_VIBER_OUTBOUND=true)');
+    process.exit(1);
+}
+if (!WEBAPP_URL) {
+    console.error('[viber-proxy] WEBAPP_URL env var is required');
+    process.exit(1);
+}
+if (!CRON_SECRET_KEY) {
+    console.error('[viber-proxy] CRON_SECRET_KEY env var is required');
+    process.exit(1);
+}
+
+const dataDir = path.join(__dirname, 'data');
+fs.mkdirSync(dataDir, { recursive: true });
+const deviceIdentity = loadOrCreateDeviceIdentity(dataDir);
+console.log(`[viber-proxy] Device id: ${deviceIdentity.deviceId}`);
+
+const viber = new ViberClient({
+    token: VIBER_BOT_TOKEN,
+    name: VIBER_BOT_NAME,
+    avatarUrl: VIBER_BOT_AVATAR_URL,
+    mockOutbound: MOCK_VIBER_OUTBOUND,
+});
+if (MOCK_VIBER_OUTBOUND) {
+    console.log('[viber-proxy] MOCK_VIBER_OUTBOUND=true — outbound Viber calls will be logged, not sent');
+}
+
+const openclaw = new OpenClawClient({
+    url: OPENCLAW_URL,
+    token: OPENCLAW_TOKEN,
+    deviceIdentity,
+    displayName: 'Sales-Recon-Viber-Proxy',
+});
+openclaw.connect();
+
+// Dedupe webhook deliveries — Viber may retry on transient failure.
+const recentTokens = new LRUCache(1000);
+
+function isLinkedReply(viberName) {
+    const url = `${WEBAPP_URL}/account/link-viber`;
+    return `Hi${viberName ? ' ' + viberName : ''}! To use this bot, link your account first:\n${url}`;
+}
+
+async function callWebapp(pathname, body) {
+    const res = await fetch(`${WEBAPP_URL}${pathname}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${CRON_SECRET_KEY}`,
+        },
+        body: JSON.stringify(body || {}),
+    });
+    let json = null;
+    try { json = await res.json(); } catch { /* non-json */ }
+    return { status: res.status, json };
+}
+
+async function lookupViberUser(viberUserId) {
+    const { status, json } = await callWebapp('/api/viber/lookup', { viberUserId });
+    if (status !== 200 || !json) return { linked: false };
+    return json;
+}
+
+async function redeemLinkCode({ code, viberUserId, viberName }) {
+    const { status, json } = await callWebapp('/api/viber/link/redeem', { code, viberUserId, viberName });
+    if (status !== 200 || !json) return null;
+    return json;
+}
+
+async function mintSession(clerkUserId) {
+    const { status, json } = await callWebapp('/api/intelligence/session-by-userid', { clerkUserId });
+    if (status !== 200 || !json) return null;
+    return json;
+}
+
+function isGroupMessage(body) {
+    // Viber community/group messages carry chat_id and a sender that is a member of the chat.
+    // DMs do not have chat_id.
+    return Boolean(body && body.chat_id);
+}
+
+function deriveSessionKey({ group, clerkUserId, chatId }) {
+    return group ? `viber-group-${chatId}` : `user-${clerkUserId}`;
+}
+
+async function handleConversationStarted(req, res) {
+    const body = req.body;
+    const ctx = body.context;
+    const sender = body.user || {};
+
+    if (!ctx) {
+        return res.json({
+            sender: { name: VIBER_BOT_NAME, avatar: VIBER_BOT_AVATAR_URL || undefined },
+            type: 'text',
+            text: `Welcome! To use this bot, link your account at ${WEBAPP_URL}/account/link-viber`,
+        });
+    }
+
+    const redeem = await redeemLinkCode({
+        code: ctx,
+        viberUserId: sender.id,
+        viberName: sender.name || '',
+    });
+
+    if (redeem && redeem.clerkUserId) {
+        return res.json({
+            sender: { name: VIBER_BOT_NAME, avatar: VIBER_BOT_AVATAR_URL || undefined },
+            type: 'text',
+            text: `Account linked${redeem.clerkName ? ' for ' + redeem.clerkName : ''}! You can now ask me for intel anytime.`,
+        });
+    }
+
+    return res.json({
+        sender: { name: VIBER_BOT_NAME, avatar: VIBER_BOT_AVATAR_URL || undefined },
+        type: 'text',
+        text: `That link code is invalid or expired. Please generate a new one at ${WEBAPP_URL}/account/link-viber`,
+    });
+}
+
+async function handleMessageEvent(body) {
+    const message = body.message || {};
+    const sender = body.sender || {};
+    const messageToken = body.message_token;
+    const chatId = body.chat_id || null;
+    const group = isGroupMessage(body);
+
+    if (messageToken && recentTokens.has(messageToken)) {
+        console.log('[viber-proxy] dedupe message_token', messageToken);
+        return;
+    }
+    if (messageToken) recentTokens.set(messageToken, true);
+
+    if (message.type !== 'text' || !message.text) {
+        if (!group && sender.id) {
+            await viber.sendText(sender.id, 'Only text messages are supported right now.');
+        }
+        return;
+    }
+
+    const userText = String(message.text).trim();
+    if (!userText) return;
+
+    const lookup = await lookupViberUser(sender.id);
+
+    if (!lookup.linked) {
+        const linkUrl = `${WEBAPP_URL}/account/link-viber`;
+        if (group) {
+            await viber.sendText(
+                { type: 'public_account', chat_id: chatId, from: sender.id },
+                `${sender.name || 'There'} — link your account first to use me here: ${linkUrl}`,
+            );
+        } else {
+            await viber.sendText(sender.id, isLinkedReply(sender.name || ''));
+        }
+        return;
+    }
+
+    const session = await mintSession(lookup.clerkUserId);
+    if (!session || !session.actionToken) {
+        const errMsg = 'Could not establish a secure session. Please try again in a moment.';
+        if (group) {
+            await viber.sendText({ type: 'public_account', chat_id: chatId, from: sender.id }, errMsg);
+        } else {
+            await viber.sendText(sender.id, errMsg);
+        }
+        return;
+    }
+
+    const sessionKey = deriveSessionKey({ group, clerkUserId: lookup.clerkUserId, chatId });
+
+    // Acknowledge fast so the user sees activity.
+    const ackTarget = group
+        ? { type: 'public_account', chat_id: chatId, from: sender.id }
+        : sender.id;
+    try {
+        await viber.sendText(ackTarget, 'Working on it…');
+    } catch (e) {
+        console.warn('[viber-proxy] ack send failed:', e.message);
+    }
+
+    const actionCtx = {
+        actionToken: session.actionToken,
+        appUrl: WEBAPP_URL,
+        role: session.role || lookup.role || 'user',
+        eventId: '',
+        eventSlug: '',
+    };
+
+    const userMessage = group
+        ? `[from: ${lookup.clerkName || sender.name || 'unknown'}, role: ${actionCtx.role}] ${userText}`
+        : userText;
+
+    openclaw.sendMessage({
+        sessionKey,
+        message: userMessage,
+        actionCtx,
+        onFinal: async ({ text, report }) => {
+            const finalText = (text && text.trim()) || 'No response.';
+            try {
+                if (group) {
+                    const parts = ViberClient.chunk(finalText);
+                    for (const part of parts) {
+                        await viber.sendText({ type: 'public_account', chat_id: chatId, from: sender.id }, part);
+                    }
+                } else {
+                    await viber.sendLongText(sender.id, finalText);
+                }
+            } catch (e) {
+                console.error('[viber-proxy] failed to deliver final reply:', e.message);
+            }
+            if (report) {
+                console.log(`[viber-proxy] structured report: type=${report.type} name=${report.name}`);
+            }
+        },
+    });
+}
+
+const app = express();
+
+// Capture raw body for signature verification while still parsing JSON.
+app.use('/viber/webhook', express.json({
+    verify: (req, _res, buf) => { req.rawBody = buf; },
+    limit: '1mb',
+}));
+
+app.get('/healthz', (_req, res) => {
+    res.json({ ok: true, openclaw: openclaw.isConnected });
+});
+
+app.post('/viber/webhook', async (req, res) => {
+    const sig = req.get('X-Viber-Content-Signature');
+    if (!verifyViberSignature(VIBER_BOT_TOKEN, req.rawBody, sig)) {
+        console.warn('[viber-proxy] signature mismatch');
+        return res.status(403).json({ error: 'invalid_signature' });
+    }
+
+    const body = req.body || {};
+    const event = body.event;
+
+    if (process.env.DEBUG === 'true') {
+        console.log('[viber-proxy] webhook', event, JSON.stringify(body).slice(0, 500));
+    }
+
+    try {
+        switch (event) {
+            case 'webhook':
+                return res.json({});
+            case 'conversation_started':
+                return await handleConversationStarted(req, res);
+            case 'message':
+                res.json({});
+                handleMessageEvent(body).catch(err =>
+                    console.error('[viber-proxy] message handler error:', err)
+                );
+                return;
+            case 'subscribed':
+            case 'unsubscribed':
+            case 'delivered':
+            case 'seen':
+            case 'failed':
+                return res.json({});
+            default:
+                console.log('[viber-proxy] unhandled event:', event);
+                return res.json({});
+        }
+    } catch (err) {
+        console.error('[viber-proxy] webhook error:', err);
+        if (!res.headersSent) res.status(500).json({ error: 'internal' });
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`[viber-proxy] Listening on :${PORT}`);
+});

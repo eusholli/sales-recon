@@ -24,6 +24,17 @@ services:
     networks:
       - webproxy
 
+  viber-proxy:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=webproxy"
+      - "traefik.http.routers.viberproxy-prod.rule=Host(`viber.maximh.us`)"
+      - "traefik.http.routers.viberproxy-prod.entrypoints=websecure"
+      - "traefik.http.routers.viberproxy-prod.tls.certresolver=myresolver"
+      - "traefik.http.services.viberproxy.loadbalancer.server.port=8081"
+    networks:
+      - webproxy
+
 networks:
   webproxy:
     external: true

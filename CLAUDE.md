@@ -29,6 +29,15 @@ Browser → Traefik (prod only) → ws-proxy → OpenClaw (AI gateway)
 - Role: `operator` (using operator scopes for chat messages)
 - Uses Ed25519 device identity (`ws-proxy/data/device.json`) for device auth alongside `OPENCLAW_TOKEN`
 
+**`viber-proxy`** (`viber-proxy/`)
+- Node.js HTTP webhook bridge for the Viber Bot API (ESM, port 8081).
+- Verifies Viber webhook signatures (HMAC-SHA256 of raw body using `VIBER_BOT_TOKEN`).
+- Maps Viber users to Clerk users via the event-planner webapp (`/api/viber/lookup`); unlinked users get a reply pointing at `/account/link-viber` to link their account.
+- Mints action tokens server-side via `/api/intelligence/session-by-userid` (Bearer `CRON_SECRET_KEY`) and dispatches messages to OpenClaw using the same `sessionKey` convention as ws-proxy: DMs use `user-<clerkUserId>` (so threads merge with the browser surface), groups/communities use `viber-group-<chatId>`.
+- Uses its own Ed25519 device identity (`viber-proxy/data/device.json`) for OpenClaw v3 handshake.
+- Routed via `viber.maximh.us` in prod.
+- Bootstrap: register the public webhook URL once via `viber-proxy/scripts/set-webhook.sh` (requires `VIBER_BOT_TOKEN` and `VIBER_WEBHOOK_URL`).
+
 **`traefik-global/`** — Global reverse proxy, runs as a separate stack.
 
 **`test-ui/`** — Next.js frontend. Connects to `ws://gateway.local:8080` (local) or `wss://chat.maximh.us` (prod).
@@ -38,8 +47,8 @@ Browser → Traefik (prod only) → ws-proxy → OpenClaw (AI gateway)
 | File | Purpose | Usage |
 |---|---|---|
 | `docker-compose.yml` | Base config | Always used |
-| `docker-compose.override.yml` | Local dev: `50045:50045` (Control UI) & `8080:8080` (ws-proxy) | Auto-merged locally |
-| `docker-compose.prod.yml` | Traefik labels for `control.maximh.us` and `chat.maximh.us` | Merge for prod |
+| `docker-compose.override.yml` | Local dev: `50045:50045` (Control UI), `8080:8080` (ws-proxy), `8081:8081` (viber-proxy) | Auto-merged locally |
+| `docker-compose.prod.yml` | Traefik labels for `control.maximh.us`, `chat.maximh.us`, `viber.maximh.us` | Merge for prod |
 
 ## Common Commands
 
@@ -123,7 +132,11 @@ Key variables required in `.env` (gitignored):
 - `WS_PROXY_CLERK_SECRET_KEYS` — Comma-separated list of additional Clerk secret keys (used by ws-proxy to support multiple auths)
 - `TAVILY_API_KEY` — Enables Tavily web search MCP skill
 - `CRON_EVENT_PLANNER_DNS` — DNS/URL for the event planner endpoint; enables cron job registration in `deploy-prod.sh` and `event-planner-cron.py`
-- `CRON_SECRET_KEY` — Secret key passed to event planner cron jobs for authenticated requests
+- `CRON_SECRET_KEY` — Secret key passed to event planner cron jobs for authenticated requests; also used by viber-proxy as the Bearer token for `/api/viber/*` and `/api/intelligence/session-by-userid`
+- `WEBAPP_URL` — Public URL of the event-planner webapp (e.g. `https://events.maximh.us`); used by viber-proxy and ws-proxy
+- `VIBER_BOT_TOKEN` — Auth token issued by Viber when the Public Account is created
+- `VIBER_BOT_NAME` / `VIBER_BOT_AVATAR_URL` — Sender identity attached to outbound Viber messages
+- `VIBER_BOT_URI` — Bot's `chatURI` slug; used by event-planner to build `viber://pa?chatURI=…&context=…` deep links on `/account/link-viber`
 - AI API keys: `XAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, etc.
 
 ## Key Implementation Details

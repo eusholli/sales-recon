@@ -5,3 +5,6 @@ services:
   ws-proxy:
     ports:
       - "8080:8080"
+  viber-proxy:
+    ports:
+      - "8081:8081"

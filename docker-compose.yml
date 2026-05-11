@@ -88,6 +88,28 @@ services:
     depends_on:
       - sales-recon-openclaw
 
+  viber-proxy:
+    container_name: sales-recon-viber-proxy
+    build: ./viber-proxy
+    restart: unless-stopped
+    image: sales-recon-viber-proxy:latest
+    environment:
+      OPENCLAW_URL: "ws://sales-recon-openclaw:50045"
+      OPENCLAW_TOKEN: "${OPENCLAW_GATEWAY_TOKEN}"
+      VIBER_BOT_TOKEN: "${VIBER_BOT_TOKEN}"
+      VIBER_BOT_NAME: "${VIBER_BOT_NAME:-Sales-Recon}"
+      VIBER_BOT_AVATAR_URL: "${VIBER_BOT_AVATAR_URL:-}"
+      WEBAPP_URL: "${WEBAPP_URL:-http://host.docker.internal:3000}"
+      CRON_SECRET_KEY: "${CRON_SECRET_KEY}"
+      DEBUG: "${DEBUG:-false}"
+    volumes:
+      - ./viber-proxy/data:/app/data
+    networks:
+      - sales-recon-net
+      - webproxy
+    depends_on:
+      - sales-recon-openclaw
+
 volumes:
   sales-recon-pgdata:
 
