@@ -123,6 +123,17 @@ function deriveSessionKey({ group, clerkUserId, chatId }) {
     return group ? `viber-group-${chatId}` : `user-${clerkUserId}`;
 }
 
+// Group messages must begin with /<VIBER_BOT_NAME> (case-insensitive) to be
+// forwarded. Returns the stripped user text, or null if the message is not
+// addressed to this bot and must be dropped silently.
+function extractGroupCommand(text) {
+    const prefix = `/${VIBER_BOT_NAME}`;
+    if (!text.toLowerCase().startsWith(prefix.toLowerCase())) return null;
+    const rest = text.slice(prefix.length);
+    if (rest.length > 0 && !/^\s/.test(rest)) return null;
+    return rest.trim();
+}
+
 async function handleConversationStarted(req, res) {
     const body = req.body;
     const ctx = body.context;
@@ -180,6 +191,14 @@ async function handleMessageEvent(body) {
     const userText = String(message.text).trim();
     if (!userText) return;
 
+    let effectiveText = userText;
+    if (group) {
+        const stripped = extractGroupCommand(userText);
+        if (stripped === null) return;
+        if (!stripped) return;
+        effectiveText = stripped;
+    }
+
     const lookup = await lookupViberUser(sender.id);
 
     if (!lookup.linked) {
@@ -227,8 +246,8 @@ async function handleMessageEvent(body) {
     };
 
     const userMessage = group
-        ? `[from: ${lookup.clerkName || sender.name || 'unknown'}, role: ${actionCtx.role}] ${userText}`
-        : userText;
+        ? `[from: ${lookup.clerkName || sender.name || 'unknown'}, role: ${actionCtx.role}] ${effectiveText}`
+        : effectiveText;
 
     openclaw.sendMessage({
         sessionKey,
