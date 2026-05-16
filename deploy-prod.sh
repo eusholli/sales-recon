@@ -12,6 +12,11 @@ if [ -f "$(dirname "$0")/.env" ]; then
 fi
 
 echo "Deploying Sales-Recon to production..."
+
+# Pre-create bind-mount data directories as the deploy user so Docker doesn't
+# create them as root, which would deny writes from the node user inside containers.
+mkdir -p ./ws-proxy/data ./viber-proxy/data
+
 echo "Running docker compose with production configuration..."
 
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
