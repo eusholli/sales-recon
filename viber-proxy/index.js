@@ -143,7 +143,7 @@ async function handleConversationStarted(req, res) {
         return res.json({
             sender: { name: VIBER_BOT_NAME, avatar: VIBER_BOT_AVATAR_URL || undefined },
             type: 'text',
-            text: `Welcome! To use this bot, link your account at ${WEBAPP_URL}/account/link-viber`,
+            text: `Welcome! To use this bot, link your account at ${VIBER_APP_URL}/account/link-viber`,
         });
     }
 
