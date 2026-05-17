@@ -33,7 +33,7 @@ export class ViberClient {
         });
         const json = await res.json().catch(() => ({}));
         if (json.status !== 0) {
-            console.warn(`[viber-client] ${path} non-zero status:`, json);
+            throw new Error(`Viber API ${path} status=${json.status} ${json.status_message || ''}`);
         }
         return json;
     }
@@ -66,8 +66,41 @@ export class ViberClient {
     }
 
     /**
-     * Split long markdown text into chunks ≤ CHUNK_LIMIT, preferring paragraph
-     * breaks → line breaks → sentence breaks → hard cut.
+     * Convert AI-generated markdown to the subset supported by Viber clients.
+     * Viber supports: *bold*, _italic_, ~strikethrough~, ```monospace```
+     * Rules: no inner spaces around markers; closing marker needs a space before
+     * an adjacent word character.
+     */
+    static convertMarkdown(text) {
+        return text
+            // ATX headers (###/##/#) → bold on own line
+            .replace(/^#{1,3} (.+)$/gm, '*$1*')
+            // **bold** → *bold*
+            .replace(/\*\*([^*\n]+)\*\*/g, '*$1*')
+            // __bold__ → *bold*
+            .replace(/__([^_\n]+)__/g, '*$1*')
+            // ~~strikethrough~~ → ~strikethrough~
+            .replace(/~~([^~\n]+)~~/g, '~$1~')
+            // Inline `code` → plain text (triple-backtick monospace blocks preserved)
+            .replace(/(?<!`)`(?!`)([^`\n]+)(?<!`)`(?!`)/g, '$1')
+            // [link text](url) → link text
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            // Horizontal rules → removed
+            .replace(/^[-*]{3,}$/gm, '')
+            // Outer-space fix: Viber requires a space between closing marker and adjacent word
+            .replace(/(\*[^*\n]+\*)(?=\w)/g, '$1 ')
+            .replace(/(_[^_\n]+_)(?=\w)/g, '$1 ')
+            .replace(/(~[^~\n]+~)(?=\w)/g, '$1 ')
+            // Collapse runs of blank lines left by removed content
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    }
+
+    /**
+     * Split text into Viber-sized chunks (≤ CHUNK_LIMIT chars).
+     * Prefers splitting at section-header boundaries (lines starting with *,
+     * #, or an emoji after a blank line), then paragraph breaks, line breaks,
+     * sentence breaks, and finally a hard cut.
      * @param {string} text
      * @returns {string[]}
      */
@@ -77,14 +110,46 @@ export class ViberClient {
 
         const out = [];
         let remaining = text;
+
         while (remaining.length > CHUNK_LIMIT) {
-            let cut = remaining.lastIndexOf('\n\n', CHUNK_LIMIT);
-            if (cut < CHUNK_LIMIT / 2) cut = remaining.lastIndexOf('\n', CHUNK_LIMIT);
-            if (cut < CHUNK_LIMIT / 2) cut = remaining.lastIndexOf('. ', CHUNK_LIMIT);
-            if (cut < CHUNK_LIMIT / 2) cut = CHUNK_LIMIT;
+            let cut = -1;
+
+            // 1. Section boundary: scan back from CHUNK_LIMIT for \n\n followed
+            //    by *, #, or a non-ASCII character (emoji used as section markers).
+            let probe = Math.min(CHUNK_LIMIT, remaining.length - 1);
+            while (probe > CHUNK_LIMIT / 4) {
+                const pos = remaining.lastIndexOf('\n\n', probe);
+                if (pos < CHUNK_LIMIT / 4) break;
+                const cc = remaining.charCodeAt(pos + 2);
+                if (cc === 0x2A || cc === 0x23 || cc > 0x7E) { cut = pos; break; }
+                probe = pos - 1;
+            }
+
+            // 2. Paragraph break
+            if (cut < 0) {
+                const pp = remaining.lastIndexOf('\n\n', CHUNK_LIMIT);
+                if (pp >= CHUNK_LIMIT / 4) cut = pp;
+            }
+
+            // 3. Line break
+            if (cut < 0) {
+                const lp = remaining.lastIndexOf('\n', CHUNK_LIMIT);
+                if (lp >= CHUNK_LIMIT / 4) cut = lp;
+            }
+
+            // 4. Sentence break
+            if (cut < 0) {
+                const sp = remaining.lastIndexOf('. ', CHUNK_LIMIT);
+                if (sp >= 0) cut = sp + 1;
+            }
+
+            // 5. Hard cut
+            if (cut <= 0) cut = CHUNK_LIMIT;
+
             out.push(remaining.slice(0, cut).trimEnd());
             remaining = remaining.slice(cut).trimStart();
         }
+
         if (remaining) out.push(remaining);
         return out;
     }

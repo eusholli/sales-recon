@@ -30,6 +30,7 @@ const VIBER_BOT_TOKEN = process.env.VIBER_BOT_TOKEN
 const VIBER_BOT_NAME = process.env.VIBER_BOT_NAME || 'Sales-Recon';
 const VIBER_BOT_AVATAR_URL = process.env.VIBER_BOT_AVATAR_URL || '';
 const WEBAPP_URL = (process.env.WEBAPP_URL || '').replace(/\/$/, '');
+const VIBER_APP_URL = (process.env.VIBER_APP_URL || WEBAPP_URL).replace(/\/$/, '');
 const CRON_SECRET_KEY = process.env.CRON_SECRET_KEY;
 const MOCK_VIBER_OUTBOUND = process.env.MOCK_VIBER_OUTBOUND === 'true';
 
@@ -225,7 +226,7 @@ async function handleMessageEvent(body) {
         return;
     }
 
-    const sessionKey = deriveSessionKey({ group, clerkUserId: lookup.clerkUserId, chatId });
+    const sessionKey = deriveSessionKey({ group, clerkUserId: lookup.clerkUserId, chatId }).toLowerCase();
 
     // Acknowledge fast so the user sees activity.
     const ackTarget = group
@@ -254,7 +255,8 @@ async function handleMessageEvent(body) {
         message: userMessage,
         actionCtx,
         onFinal: async ({ text, report }) => {
-            const finalText = (text && text.trim()) || 'No response.';
+            const finalText = ViberClient.convertMarkdown((text && text.trim()) || 'No response.');
+            console.log(`[viber-proxy] onFinal: sending reply (${finalText.length} chars)`);
             try {
                 if (group) {
                     const parts = ViberClient.chunk(finalText);
@@ -264,6 +266,7 @@ async function handleMessageEvent(body) {
                 } else {
                     await viber.sendLongText(sender.id, finalText);
                 }
+                console.log('[viber-proxy] reply delivered ok');
             } catch (e) {
                 console.error('[viber-proxy] failed to deliver final reply:', e.message);
             }

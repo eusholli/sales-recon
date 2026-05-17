@@ -99,6 +99,7 @@ services:
       VIBER_BOT_TOKEN: "${VIBER_BOT_TOKEN}"
       VIBER_BOT_NAME: "${VIBER_BOT_NAME:-Sales-Recon}"
       VIBER_BOT_AVATAR_URL: "${VIBER_BOT_AVATAR_URL:-}"
+      VIBER_APP_URL: "${VIBER_APP_URL}"
       WEBAPP_URL: "${WEBAPP_URL:-http://host.docker.internal:3000}"
       CRON_SECRET_KEY: "${CRON_SECRET_KEY}"
       DEBUG: "${DEBUG:-false}"
