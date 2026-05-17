@@ -165,7 +165,7 @@ async function handleConversationStarted(req, res) {
     return res.json({
         sender: { name: VIBER_BOT_NAME, avatar: VIBER_BOT_AVATAR_URL || undefined },
         type: 'text',
-        text: `That link code is invalid or expired. Please generate a new one at ${WEBAPP_URL}/account/link-viber`,
+        text: `That link code is invalid or expired. Please generate a new one at ${VIBER_APP_URL}/account/link-viber`,
     });
 }
 
