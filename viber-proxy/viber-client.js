@@ -6,6 +6,37 @@
 
 const VIBER_API = 'https://chatapi.viber.com/pa';
 const TEXT_LIMIT = 7000;
+
+function parseRow(line) {
+    return line.replace(/^\||\|$/g, '').split('|');
+}
+
+// Strip inline markdown markers (*bold*, _italic_, etc.) from a plain string.
+function stripInlineMarkdown(s) {
+    return s
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(/__([^_]+)__/g, '$1')
+        .replace(/_([^_]+)_/g, '$1')
+        .trim();
+}
+
+// Convert markdown tables to a Viber-safe bullet layout (Viber ignores | syntax).
+function convertTables(text) {
+    return text.replace(
+        /^(\|[^\n]+\|)\n\|[-| :]+\|\n((?:\|[^\n]+\|[ \t]*\n?)+)/gm,
+        (_match, headerLine, bodyLines) => {
+            const headers = parseRow(headerLine).map(h => stripInlineMarkdown(h));
+            const rows = bodyLines.trim().split('\n').map(parseRow);
+            const headerLabel = headers.map(h => `*${h}*`).join(' | ');
+            const dataLines = rows.map(row =>
+                '• ' + headers.map((h, i) => `*${h}:* ${stripInlineMarkdown(row[i] || '')}`).join('  ')
+            );
+            return [headerLabel, ...dataLines].join('\n');
+        }
+    );
+}
+
 // Leave headroom under the 7000-char limit for safety; Viber occasionally
 // rejects messages right at the boundary.
 const CHUNK_LIMIT = 6500;
@@ -72,7 +103,9 @@ export class ViberClient {
      * an adjacent word character.
      */
     static convertMarkdown(text) {
-        return text
+        // convertTables runs last so its *bold* markers aren't re-processed by
+        // the outer-space-fix rule below (which would corrupt * col* separators).
+        const processed = text
             // ATX headers (###/##/#) → bold on own line
             .replace(/^#{1,3} (.+)$/gm, '*$1*')
             // **bold** → *bold*
@@ -94,6 +127,7 @@ export class ViberClient {
             // Collapse runs of blank lines left by removed content
             .replace(/\n{3,}/g, '\n\n')
             .trim();
+        return convertTables(processed);
     }
 
     /**
