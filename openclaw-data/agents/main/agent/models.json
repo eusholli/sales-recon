@@ -9,17 +9,9 @@
           "name": "Kimi K2.5",
           "cost": {
             "input": 0.0006,
-            "output": 0.0025,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.0025
           },
           "contextWindow": 256000,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "openai-completions",
           "compat": {
             "supportsUsageInStreaming": true
           }
@@ -36,17 +28,9 @@
           "name": "Grok 4.1 Fast",
           "cost": {
             "input": 0.0001,
-            "output": 0.0004,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.0004
           },
-          "contextWindow": 131072,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "openai-completions"
+          "contextWindow": 131072
         }
       ],
       "apiKey": "XAI_API_KEY"
@@ -70,8 +54,7 @@
             "cacheWrite": 10
           },
           "contextWindow": 200000,
-          "maxTokens": 8192,
-          "api": "anthropic-messages"
+          "maxTokens": 8192
         }
       ],
       "apiKey": "MINIMAX_API_KEY"
@@ -85,68 +68,36 @@
           "name": "Gemini 3.1 Flash Lite",
           "cost": {
             "input": 0.0001,
-            "output": 0.0004,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.0004
           },
-          "contextWindow": 1048576,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "google-generative-ai"
+          "contextWindow": 1048576
         },
         {
           "id": "gemini-3-flash-preview",
           "name": "Gemini 3 Flash",
           "cost": {
             "input": 0.0001,
-            "output": 0.0004,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.0004
           },
-          "contextWindow": 1048576,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "google-generative-ai"
+          "contextWindow": 1048576
         },
         {
           "id": "gemini-3.1-pro-preview",
           "name": "Gemini 3.1 Pro",
           "cost": {
             "input": 0.00125,
-            "output": 0.005,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.005
           },
-          "contextWindow": 1048576,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "google-generative-ai"
+          "contextWindow": 1048576
         },
         {
           "id": "gemini-2.5-flash-lite-preview-09-2025",
           "name": "Gemini 2.5 Flash Lite",
           "cost": {
             "input": 0.0001,
-            "output": 0.0001,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.0001
           },
-          "contextWindow": 1048576,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "google-generative-ai"
+          "contextWindow": 1048576
         }
       ],
       "apiKey": "GEMINI_API_KEY"
@@ -267,8 +218,7 @@
             "cacheWrite": 10
           },
           "contextWindow": 200000,
-          "maxTokens": 8192,
-          "api": "anthropic-messages"
+          "maxTokens": 8192
         }
       ],
       "apiKey": "MINIMAX_API_KEY"
@@ -282,17 +232,9 @@
           "name": "Grok 4.1 Fast",
           "cost": {
             "input": 0.0001,
-            "output": 0.0004,
-            "cacheRead": 0,
-            "cacheWrite": 0
+            "output": 0.0004
           },
-          "contextWindow": 131072,
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "maxTokens": 8192,
-          "api": "openai-completions"
+          "contextWindow": 131072
         }
       ],
       "apiKey": "XAI_API_KEY"

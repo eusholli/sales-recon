@@ -166,8 +166,12 @@ def fetch_targets() -> list[Target]:
 
     targets: list[Target] = []
     for c in body.get("companies", []):
-        if c.get("subscriptionCount", 0) > 0:
-            targets.append(Target("company", c["name"], {"pipelineValue": c.get("pipelineValue")}))
+        # Server-side filter (subscriptionCount > 0 OR subscribed=true) is authoritative.
+        targets.append(Target("company", c["name"], {
+            "pipelineValue": c.get("pipelineValue"),
+            "region": c.get("region"),
+            "subscribed": c.get("subscribed", False),
+        }))
     for a in body.get("attendees", []):
         if a.get("subscriptionCount", 0) > 0:
             targets.append(Target("attendee", a["name"], {"title": a.get("title"), "company": a.get("company")}))
