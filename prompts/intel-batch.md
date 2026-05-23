@@ -36,8 +36,31 @@ For EACH target in the batch:
    schema above. `salesAngle` MUST cite a specific Rakuten Symphony capability
    (use `gbrain.query("Rakuten Symphony capabilities relevant to <name>")` to
    ground it). `recommendedAction` is a concrete time-sensitive next step;
-   omit only when there is genuinely no trigger. `fullReport` is the
-   markdown body you just wrote to gbrain.
+   omit only when there is genuinely no trigger.
+
+   `fullReport` MUST be the full formatted intelligence report using this exact
+   structure (the same format as AGENTS.md interactive replies):
+
+   ```
+   🦾 <Entity Name> Market Intelligence Update [YYYY-MM-DD]
+
+   <One-paragraph thesis: the single most important thing happening right now.>
+
+   🚀 Key Developments
+   - **<Headline>:** <1–2 sentence factual update with dates/numbers.>
+   - ... (3–5 bullets)
+
+   ⚠️ [FRICTION] Points
+   - **<Vulnerability/lock-in/execution risk>:** <1–2 sentences.>
+   - ... (1–3 bullets — mandatory; if no friction is evident, state that explicitly.)
+
+   💡 Sales Angle for Rakuten Symphony
+   - **The <Hook>:** <One sentence naming the specific opening for RS.>
+   - **The Pitch:** <One sentence mapping a concrete RS capability to the entity's pain point.>
+   ```
+
+   Use today's date in `[YYYY-MM-DD]`. The gbrain page body holds raw research
+   notes; `fullReport` is a composed report synthesized from that research.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DELIVERY
