@@ -1,7 +1,7 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.4.9",
-    "lastTouchedAt": "2026-05-23T15:12:34.851Z"
+    "lastTouchedAt": "2026-05-24T19:01:05.782Z"
   },
   "wizard": {
     "lastRunAt": "2026-03-10T16:25:33.647Z",
@@ -357,6 +357,12 @@
           "GOOGLE_GENERATIVE_AI_API_KEY": "${GOOGLE_GENERATIVE_AI_API_KEY}",
           "OPENAI_API_KEY": "${OPENAI_API_KEY}"
         }
+      },
+      "event-planner": {
+        "headers": {
+          "Authorization": "Bearer ${CRON_SECRET_KEY}"
+        },
+        "url": "http://host.docker.internal:3000/api/mcp/sse"
       }
     }
   }

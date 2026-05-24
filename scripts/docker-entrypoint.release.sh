@@ -61,6 +61,19 @@ node /app/dist/index.js mcp set gbrain \
 echo "[entrypoint] probing gbrain binary at registered path"
 "$GBRAIN_BIN" --version >/dev/null
 
+# Register event-planner MCP server (optional; requires CRON_EVENT_PLANNER_DNS and CRON_SECRET_KEY).
+# Both values are bash-substituted at registration time: CRON_EVENT_PLANNER_DNS is a stable infra
+# URL and CRON_SECRET_KEY is a shared Bearer token. Unlike stdio servers (gbrain), HTTP MCP servers
+# do NOT support ${VAR} placeholder substitution in headers — the value must be embedded directly.
+if [ -n "${CRON_EVENT_PLANNER_DNS:-}" ] && [ -n "${CRON_SECRET_KEY:-}" ]; then
+    echo "[entrypoint] registering event-planner MCP server with OpenClaw"
+    node /app/dist/index.js mcp set event-planner \
+        "$(printf '{"url":"%s/api/mcp/sse","headers":{"Authorization":"Bearer %s"}}' "${CRON_EVENT_PLANNER_DNS}" "${CRON_SECRET_KEY}")"
+    echo "[entrypoint] event-planner MCP registered"
+else
+    echo "[entrypoint] CRON_EVENT_PLANNER_DNS or CRON_SECRET_KEY not set — skipping event-planner MCP registration"
+fi
+
 # Seed exec-approval allowlist patterns for the autonomous cron agent so it
 # can run the binaries it needs without an interactive approval prompt.
 # Under `tools.exec.security: "allowlist"` the safeBins list in openclaw.json
