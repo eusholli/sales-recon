@@ -78,7 +78,7 @@ fi
 # can run the binaries it needs without an interactive approval prompt.
 # Under `tools.exec.security: "allowlist"` the safeBins list in openclaw.json
 # is decorative — only entries seeded here are actually permitted, so this
-# loop must mirror safeBins. `allowlist add` is idempotent.
+# block must mirror safeBins. `approvals set` is idempotent.
 #
 # Hard-fail rule: any failure here leaves the cron agent unable to exec the
 # tools it depends on (curl for webhook delivery, python3 for the dispatcher,
@@ -88,7 +88,13 @@ fi
 # Builtins (echo, pwd) intentionally excluded: `sh -c` resolves them via the
 # shell builtin and they never hit the exec allowlist; `command -v` also
 # returns the bare word for them, which would seed a junk entry.
+#
+# Optimisation: instead of 14 sequential `node approvals allowlist add` calls
+# (each paying ~2s Node.js startup), resolve all paths in shell, then do one
+# `approvals get --json | python3 merge | approvals set --stdin` round-trip.
+# gbrain is kept as a separate explicit `allowlist add` (matches original intent).
 SEED_BINS="python3 curl sleep cat touch mkdir rm trash ls head tail wc grep find"
+BIN_PATHS=""
 for bin in $SEED_BINS; do
     resolved="$(command -v "$bin" || true)"
     if [ -z "$resolved" ]; then
@@ -102,12 +108,28 @@ for bin in $SEED_BINS; do
             exit 1
             ;;
     esac
-    echo "[entrypoint] allowlisting $resolved for agent main"
-    if ! node /app/dist/index.js approvals allowlist add --agent main "$resolved"; then
-        echo "[entrypoint] FATAL: allowlist add failed for $resolved" >&2
-        exit 1
-    fi
+    BIN_PATHS="$BIN_PATHS $resolved"
 done
+
+echo "[entrypoint] seeding exec allowlist for SEED_BINS (batch via approvals set)"
+if ! node /app/dist/index.js approvals get --json | python3 -c "
+import sys, json, uuid
+data = json.load(sys.stdin)
+new_paths = '''$BIN_PATHS'''.split()
+agents = data.setdefault('agents', {})
+main   = agents.setdefault('main', {})
+entries = main.setdefault('allowlist', [])
+existing = {e['pattern'] for e in entries}
+for path in new_paths:
+    if path and path not in existing:
+        entries.append({'id': str(uuid.uuid4()), 'pattern': path,
+                        'lastResolvedPath': path, 'lastUsedAt': 0, 'lastUsedCommand': ''})
+print(json.dumps(data))
+" | node /app/dist/index.js approvals set --stdin; then
+    echo "[entrypoint] FATAL: batch allowlist seed failed" >&2
+    exit 1
+fi
+echo "[entrypoint] SEED_BINS allowlisted for agent main"
 
 echo "[entrypoint] allowlisting $GBRAIN_BIN for agent main"
 if ! node /app/dist/index.js approvals allowlist add --agent main "$GBRAIN_BIN"; then
