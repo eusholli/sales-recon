@@ -59,15 +59,27 @@ persists intermediate state and the next scheduled run will resume.
 DREAM_CYCLE_MSG = """You are running the gbrain nightly dream cycle to keep the
 sales intelligence brain healthy and self-maintaining.
 
-Use the `exec` tool to run:
-gbrain dream --json
+Do NOT use the exec tool — gbrain credential-bearing execs are blocked by the
+security allowlist regardless of path form. Use only gbrain MCP tools.
 
-This is the standard 8–10 phase nightly cycle (link reconciliation, embedding
-of stale chunks, salience recompute, soft-delete purge, orphan report,
-overnight synthesis). It is idempotent. See gbrain/docs/guides/cron-schedule.md.
+Step 1 — Submit the job:
+  Call the gbrain MCP tool `submit_job` with:
+    name: "autopilot-cycle"
+    data: {}
+  If submit_job returns an error, output FATAL: <error details> and stop.
 
-If the command exits non-zero, output a FATAL error string with stderr.
-On success, briefly summarize the JSON output (counts per phase) and stop.
+Step 2 — Poll until complete:
+  The job runs asynchronously. Poll using the gbrain MCP tool `get_job` with
+  the ID returned by submit_job. Use `exec sleep 30` between each poll.
+  Poll up to 20 times (10 minutes total). Terminal statuses are:
+    completed, failed, dead, skipped
+
+Step 3 — Report the final result:
+  On completed or skipped: report OK job_id=<id> status=<status> and include
+    the result.status and result.reason fields if present.
+  On failed or dead: report FATAL job_id=<id> status=<status> and include
+    the error details from the job result.
+  If still not terminal after 20 polls: report TIMEOUT job_id=<id>.
 """
 
 

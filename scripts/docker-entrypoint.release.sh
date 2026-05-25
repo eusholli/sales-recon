@@ -98,11 +98,14 @@ fi
 # shell builtin and they never hit the exec allowlist; `command -v` also
 # returns the bare word for them, which would seed a junk entry.
 #
-# Optimisation: instead of 14 sequential `node approvals allowlist add` calls
+# Optimisation: instead of N sequential `node approvals allowlist add` calls
 # (each paying ~2s Node.js startup), resolve all paths in shell, then do one
 # `approvals get --json | python3 merge | approvals set --stdin` round-trip.
-# gbrain is kept as a separate explicit `allowlist add` (matches original intent).
-SEED_BINS="python3 curl sleep cat touch mkdir rm trash ls head tail wc grep find"
+# gbrain is included here (not a separate allowlist add) so its entry gets the
+# same format as all other bins: pattern + lastResolvedPath + lastUsedCommand.
+# OpenClaw uses lastResolvedPath for allowlist matching; entries without it are
+# silently missed even when pattern matches the resolved binary path.
+SEED_BINS="python3 curl sleep cat touch mkdir rm trash ls head tail wc grep find gbrain"
 BIN_PATHS=""
 for bin in $SEED_BINS; do
     resolved="$(command -v "$bin" || true)"
@@ -140,11 +143,20 @@ print(json.dumps(data))
 fi
 echo "[entrypoint] SEED_BINS allowlisted for agent main"
 
-echo "[entrypoint] allowlisting $GBRAIN_BIN for agent main"
-if ! node /app/dist/index.js approvals allowlist add --agent main "$GBRAIN_BIN"; then
-    echo "[entrypoint] FATAL: allowlist add failed for $GBRAIN_BIN" >&2
+# Start gbrain Minion worker as a background daemon. Runs persistently so jobs
+# submitted via MCP (e.g. autopilot-cycle from cron) are picked up immediately.
+# Started here (after gbrain init + allowlist seed) so the worker has a valid
+# config and DATABASE_URL before it polls the queue. Hard-fail if it exits
+# immediately (indicates a bad config), but don't block the main process.
+echo "[entrypoint] starting gbrain Minion worker in background"
+"$GBRAIN_BIN" jobs work &
+GBRAIN_WORKER_PID=$!
+sleep 2
+if ! kill -0 "$GBRAIN_WORKER_PID" 2>/dev/null; then
+    echo "[entrypoint] FATAL: gbrain Minion worker exited immediately (pid=$GBRAIN_WORKER_PID)" >&2
     exit 1
 fi
+echo "[entrypoint] gbrain Minion worker running (pid=$GBRAIN_WORKER_PID)"
 
 if [ -f "/docker-entrypoint.sh" ]; then
     exec /docker-entrypoint.sh "$@"
