@@ -60,7 +60,7 @@ DREAM_CYCLE_MSG = """You are running the gbrain nightly dream cycle to keep the
 sales intelligence brain healthy and self-maintaining.
 
 Use the `exec` tool to run:
-gbrain cycle run --json
+gbrain dream --json
 
 This is the standard 8–10 phase nightly cycle (link reconciliation, embedding
 of stale chunks, salience recompute, soft-delete purge, orphan report,
