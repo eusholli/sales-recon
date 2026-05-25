@@ -47,6 +47,13 @@ if [ ! -f /app/dist/index.js ]; then
     exit 1
 fi
 
+# Heal any stale config left over from a previous OpenClaw version (deprecated
+# models, removed plugins, etc.) before any command that requires valid config.
+# doctor --fix is safe to run on every startup: it is idempotent and runs even
+# when the config is invalid.
+echo "[entrypoint] running openclaw doctor --fix to heal any stale config"
+node /app/dist/index.js doctor --fix
+
 # Register gbrain as an OpenClaw MCP server. The JSON uses literal ${VAR}
 # placeholders for the env values so OpenClaw passes the live container env
 # to the spawned MCP process at agent-invocation time. The command path is
@@ -63,8 +70,10 @@ echo "[entrypoint] probing gbrain binary at registered path"
 
 # Register event-planner MCP server (optional; requires CRON_EVENT_PLANNER_DNS and CRON_SECRET_KEY).
 # Both values are bash-substituted at registration time: CRON_EVENT_PLANNER_DNS is a stable infra
-# URL and CRON_SECRET_KEY is a shared Bearer token. Unlike stdio servers (gbrain), HTTP MCP servers
-# do NOT support ${VAR} placeholder substitution in headers — the value must be embedded directly.
+# URL and CRON_SECRET_KEY is a shared Bearer token. Uses SSE transport (/api/mcp/sse).
+# OpenClaw does not support streamable HTTP (treats the spec-compliant 405 on GET as a fatal error).
+# SSE transport requires REDIS_URL or KV_URL to be set in the event-planner environment so that
+# the GET (stream) and POST (message) handlers can coordinate via Redis pub/sub.
 if [ -n "${CRON_EVENT_PLANNER_DNS:-}" ] && [ -n "${CRON_SECRET_KEY:-}" ]; then
     echo "[entrypoint] registering event-planner MCP server with OpenClaw"
     node /app/dist/index.js mcp set event-planner \

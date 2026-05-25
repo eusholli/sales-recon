@@ -1,4 +1,4 @@
-FROM ghcr.io/openclaw/openclaw:2026.4.9
+FROM ghcr.io/openclaw/openclaw:2026.5.22
 
 USER root
 
@@ -27,6 +27,12 @@ RUN git clone https://github.com/garrytan/gbrain.git /home/node/gbrain \
 
 # Verify the binary is on PATH at build time.
 RUN gbrain --version
+
+USER node
+# Install the Brave web-search plugin (moved out of core in 5.x).
+# Installing at build time bakes it into the image so every container start
+# has it available without depending on the config volume state.
+RUN node /app/dist/index.js plugins install @openclaw/brave-plugin
 
 USER root
 COPY scripts/docker-entrypoint.release.sh /usr/local/bin/sales-recon-entrypoint.sh

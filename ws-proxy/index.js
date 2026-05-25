@@ -96,11 +96,6 @@ function extractMessageContent(message) {
     return '';
 }
 
-// Strip [ActionCtx ...] metadata that the proxy injects into user messages
-function stripActionCtx(content) {
-    return content.replace(/\n\n\[ActionCtx[^\n]*/g, '').trim();
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // OpenClaw Connection
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,8 +180,8 @@ function handleOpenClawMessage(msg) {
             id: getNextId(),
             method: 'connect',
             params: {
-                minProtocol: 3,
-                maxProtocol: 3,
+                minProtocol: 4,
+                maxProtocol: 4,
                 client: {
                     id: clientId,
                     displayName: 'Sales-Recon-Proxy-Dallas',
@@ -244,7 +239,7 @@ function handleOpenClawMessage(msg) {
                     if (role === 'assistant') {
                         content = stripThinkingBlocks(content);
                     } else if (role === 'user') {
-                        content = stripActionCtx(content);
+                        // content unchanged — ActionCtx injection removed
                     }
                     return { role, content, timestamp: m.timestamp ?? m.createdAt ?? Date.now() };
                 })
@@ -478,9 +473,6 @@ function sendToOpenClaw(browserWs, sessionKey, message, entityType, entityName) 
     }
 
     const id = getNextId();
-    const session = browserSessions.get(browserWs);
-    const sessionCtx = session?.sessionCtx ?? null;
-    const eventIdForCtx = session?.eventId ?? null;
 
     // When grounded on a specific entity, ask the agent to emit a structured
     // TargetUpdate at the end of its reply so the chat UI can render the same
@@ -496,7 +488,7 @@ After your normal markdown reply, append a final fenced JSON block tagged STRUCT
 { "type": "...", "name": "...", "summary": "...", "salesAngle": "...", "fullReport": "...", "recommendedAction": "..." }
 \`\`\`
 
-If the user only asked a clarifying question and you did not produce fresh intel this turn, omit the STRUCTURED_REPORT block entirely.`;
+Only include the STRUCTURED_REPORT block when you have actually researched a company, person, or event this turn. For greetings, chitchat, general questions, status checks, capability questions, clarifications, or any response that does not involve fresh intelligence research, omit the block entirely.`;
 
     // Always append STRUCTURED_REPORT_INSTRUCTIONS so the chat agent emits the
     // structured TargetUpdate block; the directive itself tells the agent to
@@ -506,18 +498,7 @@ If the user only asked a clarifying question and you did not produce fresh intel
         ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}${STRUCTURED_REPORT_INSTRUCTIONS}`
         : `${message}${STRUCTURED_REPORT_INSTRUCTIONS}`;
 
-    // Append ActionCtx for OpenClaw to access webapp DB
-    let fullMessage = baseMessage;
-    if (sessionCtx && sessionCtx.actionToken) {
-        // Check if token needs refresh (within 30 minutes of expiry)
-        const expiresAt = sessionCtx.expiresAt ? new Date(sessionCtx.expiresAt).getTime() : 0;
-        const thirtyMinutes = 30 * 60 * 1000;
-        if (expiresAt && Date.now() > expiresAt - thirtyMinutes) {
-            console.log(`[ws-proxy] Action token expiring soon for session ${sessionKey}, refresh needed on next opportunity`);
-            // Note: async refresh not done inline; will be handled on next connection
-        }
-        fullMessage += `\n\n[ActionCtx appUrl="${sessionCtx.appUrl}" token="${sessionCtx.actionToken}" eventId="${eventIdForCtx ?? ''}" eventSlug="${sessionCtx.eventSlug ?? ''}" role="${sessionCtx.role}"]`;
-    }
+    const fullMessage = baseMessage;
 
     const payload = {
         type: 'req',
@@ -586,45 +567,12 @@ wss.on('connection', async (ws, req) => {
         return;
     }
 
-    // Exchange Clerk token for action token (for OpenClaw DB access)
-    const eventId = url.searchParams.get('eventId');
-    let sessionCtx = null;
-    const webappUrl = process.env.WEBAPP_URL;
-    const cronSecretKey = process.env.CRON_SECRET_KEY;
-    if (webappUrl && cronSecretKey) {
-        try {
-            const sessionRes = await fetch(`${webappUrl}/api/intelligence/session`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${cronSecretKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ clerkToken: token, eventId: eventId ?? undefined })
-            });
-            if (sessionRes.ok) {
-                const data = await sessionRes.json();
-                sessionCtx = {
-                    actionToken: data.actionToken,
-                    role: data.role,
-                    appUrl: webappUrl,
-                    eventSlug: data.eventSlug ?? null,
-                    expiresAt: data.expiresAt
-                };
-                console.log(`[ws-proxy] Action token obtained for user ${userId}, role: ${data.role}`);
-            } else {
-                console.warn(`[ws-proxy] Session init failed: ${sessionRes.status}`);
-            }
-        } catch (err) {
-            console.warn('[ws-proxy] Session init error:', err.message);
-        }
-    }
-
     // Use a deterministic, user-scoped session key so the same user
     // always resumes the same OpenClaw conversation thread.
     const sessionKey = `user-${userId.toLowerCase()}`;
     console.log(`[ws-proxy] Browser connected, user: ${userId}, sessionKey: ${sessionKey}`);
 
-    browserSessions.set(ws, { sessionKey, userId, sessionCtx, token, eventId: eventId ?? null });
+    browserSessions.set(ws, { sessionKey, userId });
 
     let wsSet = sessionToBrowser.get(sessionKey);
     if (!wsSet) {

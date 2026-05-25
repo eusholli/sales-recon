@@ -29,7 +29,7 @@ After your normal markdown reply, append a final fenced JSON block tagged STRUCT
 { "type": "...", "name": "...", "summary": "...", "salesAngle": "...", "fullReport": "...", "recommendedAction": "..." }
 \`\`\`
 
-If the user only asked a clarifying question and you did not produce fresh intel this turn, omit the STRUCTURED_REPORT block entirely.`;
+Only include the STRUCTURED_REPORT block when you have actually researched a company, person, or event this turn. For greetings, chitchat, general questions, status checks, capability questions, clarifications, or any response that does not involve fresh intelligence research, omit the block entirely.`;
 
 function stripThinkingBlocks(content) {
     return content.replace(/<(?:think|thinking)[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi, '').trim();
@@ -242,8 +242,8 @@ export class OpenClawClient {
             id: this._nextId(),
             method: 'connect',
             params: {
-                minProtocol: 3,
-                maxProtocol: 3,
+                minProtocol: 4,
+                maxProtocol: 4,
                 client: {
                     id: clientId,
                     displayName: this.displayName,

@@ -174,3 +174,18 @@ openclaw-data/agents/*/agent/auth-state.json
 
 # --- Ensure deep .openclaw paths are ignored ---
 openclaw-data/workspace-*/.openclaw/
+
+# --- Agent Codex State (contains auth, SQLite DBs, memory) ---
+openclaw-data/agents/*/agent/codex-home/
+
+# --- NPM Plugin Dependencies ---
+openclaw-data/npm/
+
+# --- Last-Good Config Backups ---
+openclaw-data/*.last-good
+
+# --- Plugin Skill Symlinks ---
+openclaw-data/plugin-skills/
+
+# --- Plugin Installation Registry ---
+openclaw-data/plugins/
