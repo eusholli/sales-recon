@@ -46,6 +46,8 @@ const pendingRequests = new Map();
 const assistantBuffers = new Map();
 // Parser state for thinking tags (stream=assistant)
 const sessionParsingState = new Map();
+// Entity context (entityType, entityName) for the current turn per session
+const sessionEntityContext = new Map();
 // ─────────────────────────────────────────────────────────────────────────────
 // Content Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -78,6 +80,62 @@ function extractStructuredReport(content) {
         return parsed;
     } catch {
         return null;
+    }
+}
+
+// Post a TargetUpdate to the event-planner intelligence webhook so the
+// intelligenceReport table is updated immediately after every chat intelligence
+// response — regardless of whether the agent's adhoc sync also fires.
+// Uses WEBAPP_URL + CRON_SECRET_KEY which are already in the ws-proxy env.
+// originalEntityName: the name the browser sent (e.g. "AMX") — used as primary DB key
+// so the subscribe page's exact-match lookup finds it. Falls back to report.name when
+// not available (e.g. cron-triggered reports that have no browser session).
+async function postIntelligenceReport(report, originalEntityName) {
+    const webappUrl = process.env.WEBAPP_URL;
+    const secretKey = process.env.CRON_SECRET_KEY;
+    if (!webappUrl || !secretKey) {
+        console.warn('[ws-proxy] WEBAPP_URL or CRON_SECRET_KEY not set — skipping intel report sync');
+        return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const targetData = {
+        type: report.type,
+        summary: report.summary,
+        salesAngle: report.salesAngle,
+        fullReport: report.fullReport,
+        ...(report.recommendedAction ? { recommendedAction: report.recommendedAction } : {}),
+    };
+    // Always post under report.name (agent's canonical name)
+    const updatedTargets = [{ ...targetData, name: report.name }];
+    // Also post under the original entity name when it differs — ensures the subscribe
+    // page's exact-match lookup (which uses the DB company/attendee name) finds a row.
+    if (originalEntityName && originalEntityName !== report.name) {
+        updatedTargets.push({ ...targetData, name: originalEntityName });
+    }
+    const payload = {
+        runId: `${today}-adhoc`,
+        timestamp: new Date().toISOString(),
+        silent: true,
+        updatedTargets,
+    };
+    try {
+        const res = await fetch(`${webappUrl}/api/webhooks/intel-report`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${secretKey}`,
+            },
+            body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+            const names = updatedTargets.map(t => t.name).join(', ');
+            console.log(`[ws-proxy] Intel report synced: ${report.type} '${names}'`);
+        } else {
+            const text = await res.text();
+            console.error(`[ws-proxy] Intel report sync failed: ${res.status} ${text}`);
+        }
+    } catch (err) {
+        console.error('[ws-proxy] Intel report sync error:', err.message);
     }
 }
 
@@ -445,6 +503,15 @@ function handleOpenClawMessage(msg) {
             const finalBuf = assistantBuffers.get(sessionKey) || '';
             const report = extractStructuredReport(finalBuf);
             broadcastToSession(sessionKey, report ? { type: 'final', report } : { type: 'final' });
+            // Sync to event-planner DB immediately — don't wait for agent's adhoc POST decision.
+            // Use the original entityName the browser sent (e.g. "AMX") so the DB key matches
+            // what the subscribe page queries, rather than the agent's expanded name
+            // (e.g. "América Móvil (AMX)").
+            if (report) {
+                const entityCtx = sessionEntityContext.get(sessionKey);
+                postIntelligenceReport(report, entityCtx?.entityName).catch(() => {});
+                sessionEntityContext.delete(sessionKey);
+            }
             assistantBuffers.delete(sessionKey);
 
             // Clean up the pending request for this session
@@ -474,31 +541,19 @@ function sendToOpenClaw(browserWs, sessionKey, message, entityType, entityName) 
 
     const id = getNextId();
 
-    // When grounded on a specific entity, ask the agent to emit a structured
-    // TargetUpdate at the end of its reply so the chat UI can render the same
-    // header card as the cron-batch path. The schema mirrors
-    // event-planner/lib/intelligence-schema.ts and
-    // sales-recon/prompts/target-update.schema.json. Keep the regex parser in
-    // extractStructuredReport() in sync if the fence tag changes.
-    const STRUCTURED_REPORT_INSTRUCTIONS = `
+    // Entity grounding prefix is only added when the caller supplied entityType+entityName.
+    // The agent (via AGENTS.md) decides autonomously when to append the STRUCTURED_REPORT block.
+    const fullMessage = entityType && entityName
+        ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}`
+        : message;
 
-After your normal markdown reply, append a final fenced JSON block tagged STRUCTURED_REPORT containing a TargetUpdate object that summarizes the intel. Required fields: "type" ("company"|"attendee"|"event"), "name", "summary" (2-3 sentences), "salesAngle" (1 sentence citing a Rakuten Symphony capability), "fullReport" (the markdown body of your reply). Optional: "recommendedAction" (concrete next step). Format exactly:
-
-\`\`\`json STRUCTURED_REPORT
-{ "type": "...", "name": "...", "summary": "...", "salesAngle": "...", "fullReport": "...", "recommendedAction": "..." }
-\`\`\`
-
-Only include the STRUCTURED_REPORT block when you have actually researched a company, person, or event this turn. For greetings, chitchat, general questions, status checks, capability questions, clarifications, or any response that does not involve fresh intelligence research, omit the block entirely.`;
-
-    // Always append STRUCTURED_REPORT_INSTRUCTIONS so the chat agent emits the
-    // structured TargetUpdate block; the directive itself tells the agent to
-    // omit the block on pure clarifying-question turns. Entity grounding prefix
-    // is only added when the caller supplied entityType+entityName.
-    let baseMessage = entityType && entityName
-        ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}${STRUCTURED_REPORT_INSTRUCTIONS}`
-        : `${message}${STRUCTURED_REPORT_INSTRUCTIONS}`;
-
-    const fullMessage = baseMessage;
+    // Track entity context so postIntelligenceReport can use the original name
+    // (the agent may expand it, e.g. "AMX" → "América Móvil (AMX)")
+    if (entityType && entityName) {
+        sessionEntityContext.set(sessionKey, { entityType, entityName });
+    } else {
+        sessionEntityContext.delete(sessionKey);
+    }
 
     const payload = {
         type: 'req',

@@ -423,7 +423,12 @@ async def run(run_id: str, limit: int | None, no_webhook: bool, silent_only: boo
                 )
                 next_offset = int(resp.get("nextOffset", -1))
                 total = int(resp.get("total", 0))
-                log("info", "notify slice ok", offset=offset, nextOffset=next_offset, total=total, sent=resp.get("emailsSent"))
+                log("info", "notify slice ok", offset=offset, nextOffset=next_offset, total=total,
+                    emailsSent=resp.get("emailsSent"),
+                    regionalSent=resp.get("regionalSent"),
+                    unassignedSent=resp.get("unassignedSent"),
+                    emailsSkippedAlreadySent=resp.get("emailsSkippedAlreadySent"),
+                    subscribersInSlice=resp.get("subscribersInSlice"))
                 if next_offset < 0 or next_offset >= total:
                     break
                 offset = next_offset

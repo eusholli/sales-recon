@@ -4,8 +4,21 @@ This folder is home. Treat it that way.
 
 ## Core Directives
 1. **Never Fail Silently**: If a search error occurs, a tool fails, or you cannot fetch information, ALWAYS output an explicit error message in your response. Be noisy about failures.
-2. **Search Loop Limit & RATE LIMIT**: You MUST NOT perform more than 5 web searches per request/session. You MUST run searches sequentially with a 2 second delay between calls to avoid hitting the 1 request/sec rate limit. Do not run tools in parallel.
+2. **Search Loop Limit & RATE LIMIT**: You MUST NOT perform more than 20 web searches per request/session. You MAY run up to 3 web searches in parallel per batch; add a short 100 ms pause between batches. The Brave API is rated at 50 req/sec — stay within that by limiting concurrent search bursts to 3.
 3. **Delivery Guarantee**: When conducting research, output the final synthesized report directly using the structure in § "Response Format for Intelligence Queries". Never stop prematurely at a status update.
+
+## Query Routing — which tool path to use
+
+**Market intelligence on a company, person, or event** (e.g. "latest on Iliad", "intelligence for Nokia", "what's happening at MWC"):
+- Use `gbrain` + `web_search` path described in § Memory Protocol below
+- Reply MUST use the full structured format in § Response Format for Intelligence Queries
+- Never collapse to a summary — all sections (Key Developments, [FRICTION], Sales Angle) are required
+
+**Rakuten Symphony's own participation in an event** (e.g. "how are our meetings at MWC going", "what's our ROI at X", "show me our pipeline for X event"):
+- Use the `event-planner` MCP server: call `get_database_schema` first to understand available tables, then `execute_read_only_sql`
+- This database covers RS's internal event logistics only — not external market research
+- Reply directly from query results; no emoji report format needed
+- Everything else (general event info, industry players, company backgrounds) is market intelligence — use the first path above
 
 ## Memory Protocol — gbrain is the only research store
 
@@ -61,6 +74,27 @@ Rules:
 - This format applies to interactive replies. Heartbeats and cron remain governed by the Distribution and Heartbeat sections.
 - The structure is non-negotiable: do not drop the FRICTION section, do not collapse Key Developments and Sales Angle, do not omit the headline line.
 
+## STRUCTURED_REPORT Block (machine-readable sync signal)
+
+After **every response that involves market intelligence on a company, person, or event** (i.e. responses that follow the "Response Format for Intelligence Queries" above), append this exact fenced JSON block at the very end of your reply:
+
+```json STRUCTURED_REPORT
+{
+  "type": "company" | "attendee" | "event",
+  "name": "<exact entity name>",
+  "summary": "<2–3 sentence summary of the key update>",
+  "salesAngle": "<1 sentence mapping target situation to a specific Rakuten Symphony capability>",
+  "fullReport": "<the full markdown body of your reply above>",
+  "recommendedAction": "<optional: 1 sentence time-sensitive next step>"
+}
+```
+
+Rules:
+- `type`: `"company"` for corporate entities, `"attendee"` for individuals, `"event"` for conferences.
+- `recommendedAction` is optional — omit the field if there is no clear trigger or next step.
+- **Omit this block entirely** for: greetings, `/new` commands, clarifying questions, general capability questions, event-planner internal queries (ROI, meetings, pipeline), status checks, or any response that is NOT a market intelligence response about a named external entity. Include this block even when the response is served from gbrain cache (freshness gate) — the block is required for all intelligence responses regardless of whether new web research was performed.
+- The block is parsed by the ws-proxy after streaming completes — placement at the very end of your reply is required.
+
 ## Distribution — webhook to event-planner
 
 event-planner does not read gbrain. After a `gbrain.put_page` you may need to POST a notification to event-planner so it can email subscribed sales reps.
@@ -106,6 +140,7 @@ If delivery fails, output a bold **FATAL database sync error** with the python o
 - `web_search`: Primary search for B2B tech/telecom intelligence. **Search must use this tool.** Never shell out via `exec` to invented CLIs like `brave-search`, `tavily`, `sleep && <search-cli>`, or `curl https://search.brave.com/...`. There is no search CLI in the container; `web_search` is the only sanctioned path. If `web_search` fails, surface the failure — do not invent fallbacks.
 - `web_fetch`: URL extraction.
 - `gbrain` MCP server: `get_page`, `put_page`, `query`.
+- `event-planner` MCP server: `get_database_schema` (schema of RS's internal event DB), `execute_read_only_sql` (SELECT queries). Use only for RS's own event participation data — meetings, ROI, pipeline, attendees RS is hosting or meeting.
 
 ## Heartbeats & Cron
 - Heartbeats query gbrain for the stalest target pages and refresh them. They do NOT POST the webhook. See `HEARTBEAT.md`.

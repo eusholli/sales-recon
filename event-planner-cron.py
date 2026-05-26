@@ -48,6 +48,11 @@ It does the research itself by spawning concurrent agent sessions. You
 MUST NOT do any research, mkdir, cat, or file writes yourself — those
 will be denied by the allowlist.
 
+Each research agent MUST NOT exceed 15 web searches per session and MUST
+space searches sequentially with a 300 ms delay between calls. Multiple
+agents run in parallel across the dispatcher — this spacing keeps aggregate
+API usage within the 50 req/sec Brave plan ceiling.
+
 If the command exits 0, the run succeeded — report `OK runId=<value>`
 (extract the runId from the dispatcher's stdout `dispatch start` log line).
 If exit is non-zero, report `FATAL runId=<value> exit=<code>` and surface
