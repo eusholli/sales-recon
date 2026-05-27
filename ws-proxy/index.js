@@ -48,6 +48,8 @@ const assistantBuffers = new Map();
 const sessionParsingState = new Map();
 // Entity context (entityType, entityName) for the current turn per session
 const sessionEntityContext = new Map();
+// sessionId returned by chat.history — required for chat.send to continue the same thread
+const sessionIdMap = new Map();
 // ─────────────────────────────────────────────────────────────────────────────
 // Content Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -288,7 +290,12 @@ function handleOpenClawMessage(msg) {
         }
         // Handle chat.history response
         if (pending?.isHistoryRequest && msg.ok) {
-            const rawMessages = Array.isArray(msg.result?.messages) ? msg.result.messages : [];
+            const rawMessages = Array.isArray(msg.payload?.messages) ? msg.payload.messages : [];
+            // Store the sessionId so chat.send can continue the same thread
+            if (msg.payload?.sessionId) {
+                sessionIdMap.set(pending.sessionKey, msg.payload.sessionId);
+                console.log(`[ws-proxy] Stored sessionId for ${pending.sessionKey}: ${msg.payload.sessionId}`);
+            }
             const SILENT_REPLY = /^\s*NO_REPLY\s*$/;
             const cleanMessages = rawMessages
                 .map(m => {
@@ -306,6 +313,44 @@ function handleOpenClawMessage(msg) {
                 sendToBrowser(pending.browserWs, { type: 'history', messages: cleanMessages });
                 console.log(`[ws-proxy] Sent ${cleanMessages.length} history messages from OpenClaw to ${pending.sessionKey}`);
             }
+            pendingRequests.delete(msg.id);
+            return;
+        }
+        // Handle /history command response: format history as an assistant reply
+        if (pending?.isHistoryCommandRequest && msg.ok) {
+            const rawMessages = Array.isArray(msg.payload?.messages) ? msg.payload.messages : [];
+            // Store sessionId in case this is the first fetch for this session
+            if (msg.payload?.sessionId) {
+                sessionIdMap.set(pending.sessionKey, msg.payload.sessionId);
+            }
+            const SILENT_REPLY = /^\s*NO_REPLY\s*$/;
+            const STRUCTURED_REPORT_STRIP = /```json\s+STRUCTURED_REPORT[\s\S]*?```/gi;
+            const cleanMessages = rawMessages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => {
+                    let content = extractMessageContent(m);
+                    if (m.role === 'assistant') {
+                        content = stripThinkingBlocks(content);
+                        content = content.replace(STRUCTURED_REPORT_STRIP, '').trim();
+                    }
+                    return { role: m.role, content };
+                })
+                .filter(m => {
+                    if (!m.content || SILENT_REPLY.test(m.content)) return false;
+                    // Skip raw JSON responses (tool results stored as text, intermediate agent data)
+                    const t = m.content.trim();
+                    if (t.startsWith('{') || t.startsWith('[')) return false;
+                    // Skip very short content that can't be a meaningful message
+                    if (m.content.length < 20) return false;
+                    return true;
+                });
+            const formatted = cleanMessages.length === 0
+                ? "No conversation history yet."
+                : "**Conversation History:**\n\n" + cleanMessages
+                    .map(m => `**${m.role === 'user' ? 'You' : 'Assistant'}:** ${m.content}`)
+                    .join('\n\n---\n\n');
+            sendToBrowser(pending.browserWs, { type: 'chunk', content: formatted });
+            sendToBrowser(pending.browserWs, { type: 'final' });
             pendingRequests.delete(msg.id);
             return;
         }
@@ -487,11 +532,17 @@ function handleOpenClawMessage(msg) {
                 }
             }
 
-            // If no content was generated,
-            // send a fallback message so the user isn't left with a silent empty response.
+            // If no content was generated, pick the fallback based on what was sent.
+            // /new returns an empty final — inject a friendly confirmation instead of an error.
             const currentBuf = assistantBuffers.get(sessionKey) || '';
             if (!currentBuf) {
-                const fallbackMsg = "I wasn't able to generate a response. Please try again.";
+                let sentMsg = null;
+                for (const [, req] of pendingRequests) {
+                    if (req.sessionKey === sessionKey) { sentMsg = req.sentMessage; break; }
+                }
+                const fallbackMsg = sentMsg === '/new'
+                    ? "Session cleared. What would you like to research?"
+                    : "I wasn't able to generate a response. Please try again.";
                 broadcastToSession(sessionKey, { type: 'chunk', content: fallbackMsg });
                 assistantBuffers.set(sessionKey, fallbackMsg);
             }
@@ -555,18 +606,20 @@ function sendToOpenClaw(browserWs, sessionKey, message, entityType, entityName) 
         sessionEntityContext.delete(sessionKey);
     }
 
+    const sessionId = sessionIdMap.get(sessionKey);
     const payload = {
         type: 'req',
         id,
         method: 'chat.send',
         params: {
             sessionKey,
+            ...(sessionId ? { sessionId } : {}),
             idempotencyKey: `idem-${Date.now()}-${id}`,
             message: fullMessage,
         },
     };
 
-    pendingRequests.set(id, { browserWs, sessionKey });
+    pendingRequests.set(id, { browserWs, sessionKey, sentMessage: message });
     console.log('[ws-proxy] -> OpenClaw:', JSON.stringify(payload));
     openclawWs.send(JSON.stringify(payload));
 }
@@ -682,6 +735,26 @@ wss.on('connection', async (ws, req) => {
     });
 });
 
+function handleHistoryCommand(ws, session) {
+    if (!isConnected || !openclawWs) {
+        sendToBrowser(ws, { type: 'error', message: 'Not connected to agent' });
+        return;
+    }
+    const historyId = getNextId();
+    pendingRequests.set(historyId, {
+        browserWs: ws,
+        sessionKey: session.sessionKey,
+        isHistoryCommandRequest: true,
+    });
+    openclawWs.send(JSON.stringify({
+        type: 'req',
+        id: historyId,
+        method: 'chat.history',
+        params: { sessionKey: session.sessionKey, limit: 200 },
+    }));
+    console.log(`[ws-proxy] /history command: fetching chat.history for ${session.sessionKey}`);
+}
+
 async function handleBrowserMessage(ws, msg) {
     console.log('[ws-proxy] Browser:', JSON.stringify(msg));
 
@@ -694,6 +767,9 @@ async function handleBrowserMessage(ws, msg) {
     if (msg.type === 'new-session') {
         // Send /new to OpenClaw to start a fresh conversation thread
         sendToOpenClaw(ws, session.sessionKey, '/new');
+
+        // Clear stored sessionId — the new thread will get a fresh one on next chat.history
+        sessionIdMap.delete(session.sessionKey);
 
         // Notify all browser windows for this user to clear their UI
         const wsSet = sessionToBrowser.get(session.sessionKey);
@@ -717,7 +793,12 @@ async function handleBrowserMessage(ws, msg) {
             console.log(`[ws-proxy] Broadcasted user-message to ${broadcastCount} other browser(s)`);
         }
 
-        sendToOpenClaw(ws, session.sessionKey, msg.content, msg.entityType, msg.entityName);
+        // Intercept /history: fetch real history instead of sending to the LLM
+        if (msg.content && msg.content.trim() === '/history') {
+            handleHistoryCommand(ws, session);
+        } else {
+            sendToOpenClaw(ws, session.sessionKey, msg.content, msg.entityType, msg.entityName);
+        }
     } else {
         sendToBrowser(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
     }
