@@ -183,6 +183,22 @@ function connectToOpenClaw() {
     openclawWs.on('close', (code, reason) => {
         console.log(`[ws-proxy] OpenClaw connection closed: ${code} - ${reason}`);
         isConnected = false;
+
+        // Notify all connected browsers that the gateway is offline
+        for (const [ws] of browserSessions) {
+            sendToBrowser(ws, { type: 'gateway-offline' });
+        }
+
+        // Clear in-progress state so stale buffers don't corrupt the next response
+        assistantBuffers.clear();
+        sessionParsingState.clear();
+
+        // Fail all pending requests so browsers aren't left waiting indefinitely
+        for (const [id, req] of pendingRequests) {
+            sendToBrowser(req.browserWs, { type: 'error', message: 'Agent connection lost — please resend your message' });
+        }
+        pendingRequests.clear();
+
         scheduleReconnect();
     });
 
@@ -265,7 +281,7 @@ function handleOpenClawMessage(msg) {
                 userAgent: 'sales-recon-ws-proxy/1.0.0',
             },
         };
-        console.log('[ws-proxy] Sending connect handshake (protocol v3, device-signed)');
+        console.log('[ws-proxy] Sending connect handshake (protocol v4, device-signed)');
         const frame = JSON.stringify(response);
         console.log('[ws-proxy] -> OpenClaw (Handshake):', frame);
         openclawWs.send(frame);
@@ -276,6 +292,25 @@ function handleOpenClawMessage(msg) {
     if (msg.type === 'res' && msg.ok && !isConnected) {
         isConnected = true;
         console.log('[ws-proxy] Handshake complete, ready for clients');
+
+        // Notify all already-connected browsers that the gateway is back online
+        // and re-fetch history so sessions that connected during downtime get their messages.
+        for (const [sessionKey, wsSet] of sessionToBrowser) {
+            if (wsSet.size === 0) continue;
+            for (const ws of wsSet) {
+                sendToBrowser(ws, { type: 'gateway-online' });
+            }
+            const historyId = getNextId();
+            const firstBrowserWs = wsSet.values().next().value;
+            pendingRequests.set(historyId, { browserWs: firstBrowserWs, sessionKey, isHistoryRequest: true });
+            openclawWs.send(JSON.stringify({
+                type: 'req',
+                id: historyId,
+                method: 'chat.history',
+                params: { sessionKey, limit: 200 },
+            }));
+            console.log(`[ws-proxy] Re-fetched chat.history for ${sessionKey} after reconnect (id=${historyId})`);
+        }
         return;
     }
 
@@ -308,7 +343,7 @@ function handleOpenClawMessage(msg) {
                     }
                     return { role, content, timestamp: m.timestamp ?? m.createdAt ?? Date.now() };
                 })
-                .filter(m => m.content && !SILENT_REPLY.test(m.content));
+                .filter(m => m.content && !SILENT_REPLY.test(m.content) && !m.content.startsWith('[chat.history omitted:'));
             if (cleanMessages.length > 0) {
                 sendToBrowser(pending.browserWs, { type: 'history', messages: cleanMessages });
                 console.log(`[ws-proxy] Sent ${cleanMessages.length} history messages from OpenClaw to ${pending.sessionKey}`);
@@ -799,6 +834,21 @@ async function handleBrowserMessage(ws, msg) {
         } else {
             sendToOpenClaw(ws, session.sessionKey, msg.content, msg.entityType, msg.entityName);
         }
+    } else if (msg.type === 'abort') {
+        if (!isConnected || !openclawWs) {
+            sendToBrowser(ws, { type: 'error', message: 'Not connected to agent' });
+            return;
+        }
+        const id = getNextId();
+        openclawWs.send(JSON.stringify({
+            type: 'req',
+            id,
+            method: 'chat.abort',
+            params: { sessionKey: session.sessionKey },
+        }));
+        console.log(`[ws-proxy] Sent chat.abort for session ${session.sessionKey}`);
+        // No pendingRequests entry — abort is fire-and-forget.
+        // The normal 'final' event still arrives and cleans up buffers.
     } else {
         sendToBrowser(ws, { type: 'error', message: `Unknown message type: ${msg.type}` });
     }
