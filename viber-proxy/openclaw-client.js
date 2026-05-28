@@ -80,6 +80,8 @@ export class OpenClawClient {
         this.pendingRequests = new Map();
         // sessionKey -> sessionId returned by the server (for thread continuity)
         this.sessionIds = new Map();
+        // request id -> { sessionKey, onHistory }
+        this.historyRequests = new Map();
     }
 
     connect() {
@@ -137,6 +139,39 @@ export class OpenClawClient {
         if (msg.type === 'res' && msg.ok && !this.isConnected) {
             this.isConnected = true;
             console.log('[openclaw-client] Handshake complete');
+            return;
+        }
+
+        if (msg.type === 'res' && typeof msg.id === 'string' && this.historyRequests.has(msg.id)) {
+            const { sessionKey, onHistory } = this.historyRequests.get(msg.id);
+            this.historyRequests.delete(msg.id);
+            if (msg.payload?.sessionId) {
+                this.sessionIds.set(sessionKey, msg.payload.sessionId);
+            }
+            if (msg.ok) {
+                const SILENT_REPLY = /^\s*NO_REPLY\s*$/;
+                const rawMessages = Array.isArray(msg.payload?.messages) ? msg.payload.messages : [];
+                const clean = rawMessages
+                    .filter(m => m.role === 'user' || m.role === 'assistant')
+                    .map(m => {
+                        let content = typeof m.content === 'string' ? m.content
+                            : Array.isArray(m.content)
+                                ? m.content.filter(p => p?.type === 'text').map(p => p.text).join('\n')
+                                : (m.text || '');
+                        if (m.role === 'assistant') {
+                            content = stripStructuredFence(stripThinkingBlocks(content));
+                        }
+                        return { role: m.role, content };
+                    })
+                    .filter(m => {
+                        if (!m.content || SILENT_REPLY.test(m.content)) return false;
+                        const t = m.content.trim();
+                        if (t.startsWith('{') || t.startsWith('[')) return false;
+                        if (m.content.length < 20) return false;
+                        return true;
+                    });
+                onHistory(clean);
+            }
             return;
         }
 
@@ -307,5 +342,38 @@ export class OpenClawClient {
             console.log('[openclaw-client] ->', JSON.stringify(payload));
         }
         this.ws.send(JSON.stringify(payload));
+    }
+
+    /**
+     * Reset the session for the given sessionKey by sending /new to OpenClaw
+     * and clearing the stored sessionId so the next send starts a fresh thread.
+     */
+    resetSession(sessionKey) {
+        this.sessionIds.delete(sessionKey);
+        this.sendMessage({
+            sessionKey,
+            message: '/new',
+            onFinal: () => { /* caller sends the confirmation message directly */ },
+        });
+    }
+
+    /**
+     * Fetch conversation history for the given sessionKey.
+     * @param {string} sessionKey
+     * @param {function(Array<{role:string, content:string}>):void} onHistory
+     */
+    fetchHistory(sessionKey, onHistory) {
+        if (!this.isConnected || !this.ws) {
+            onHistory([]);
+            return;
+        }
+        const id = this._nextId();
+        this.historyRequests.set(id, { sessionKey, onHistory });
+        this.ws.send(JSON.stringify({
+            type: 'req',
+            id,
+            method: 'chat.history',
+            params: { sessionKey, limit: 200 },
+        }));
     }
 }

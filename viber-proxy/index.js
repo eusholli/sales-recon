@@ -212,12 +212,43 @@ async function handleMessageEvent(body) {
 
     const sessionKey = deriveSessionKey({ group, clerkUserId: lookup.clerkUserId, chatId }).toLowerCase();
 
-    // Acknowledge fast so the user sees activity.
-    const ackTarget = group
+    const replyTarget = group
         ? { type: 'public_account', chat_id: chatId, from: sender.id }
         : sender.id;
+
+    // Intercept special commands before forwarding to OpenClaw.
+    if (effectiveText === '/new') {
+        openclaw.resetSession(sessionKey);
+        await viber.sendText(replyTarget, 'Session cleared. What would you like to research?');
+        return;
+    }
+
+    if (effectiveText === '/history') {
+        openclaw.fetchHistory(sessionKey, async (messages) => {
+            const formatted = messages.length === 0
+                ? 'No conversation history yet.'
+                : '**Conversation History:**\n\n' + messages
+                    .map(m => `**${m.role === 'user' ? 'You' : 'Assistant'}:** ${m.content}`)
+                    .join('\n\n---\n\n');
+            const text = ViberClient.convertMarkdown(formatted);
+            try {
+                if (group) {
+                    for (const part of ViberClient.chunk(text)) {
+                        await viber.sendText(replyTarget, part);
+                    }
+                } else {
+                    await viber.sendLongText(sender.id, text);
+                }
+            } catch (e) {
+                console.error('[viber-proxy] failed to deliver history reply:', e.message);
+            }
+        });
+        return;
+    }
+
+    // Acknowledge fast so the user sees activity.
     try {
-        await viber.sendText(ackTarget, 'Working on it…');
+        await viber.sendText(replyTarget, 'Working on it…');
     } catch (e) {
         console.warn('[viber-proxy] ack send failed:', e.message);
     }
