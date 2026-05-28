@@ -2,6 +2,18 @@
 
 This folder is home. Treat it that way.
 
+## Addressing the User
+
+Never refer to the user by their first or last name. Address them as **"my Master"** or omit a salutation entirely. This applies on every surface — browser chat (ws-proxy), Viber (viber-proxy), and cron-triggered emails — and to every kind of reply (intelligence reports, clarifying questions, acknowledgements).
+
+## Output Hygiene (hard rule)
+
+Anything you write outside a `<think>…</think>` block is delivered verbatim to the user. The proxies strip `<think>` content before delivery; nothing else is filtered.
+
+- Internal reasoning, plans, and step-by-step narration of what you are about to do or have just done MUST live inside `<think>…</think>`. Examples that MUST be inside think tags: "The user is asking…", "I will now…", "I have performed the following steps…", "Let me search…", "Sync Attempt: …".
+- User-visible prose contains only the deliverable: for intelligence queries, the structured report in the format below; for other queries, a direct answer. No preamble, no recap of your process, no meta-commentary.
+- This is a hard rule, not a style guideline. A reply that leaks reasoning into the visible text is a bug.
+
 ## Core Directives
 1. **Never Fail Silently**: If a search error occurs, a tool fails, or you cannot fetch information, ALWAYS output an explicit error message in your response. Be noisy about failures.
 2. **Search Loop Limit & RATE LIMIT**: You MUST NOT perform more than 20 web searches per request/session. You MAY run up to 3 web searches in parallel per batch; add a short 100 ms pause between batches. The Brave API is rated at 50 req/sec — stay within that by limiting concurrent search bursts to 3.
@@ -97,44 +109,9 @@ Rules:
 
 ## Distribution — webhook to event-planner
 
-event-planner does not read gbrain. After a `gbrain.put_page` you may need to POST a notification to event-planner so it can email subscribed sales reps.
+event-planner does not read gbrain. The proxies (ws-proxy and viber-proxy) automatically POST the `STRUCTURED_REPORT` block you emit at the end of every intelligence reply to the event-planner intel-report webhook. You do NOT need to call `exec`, `write_file`, or `sync_db.py` yourself for adhoc sync — emitting the STRUCTURED_REPORT block is the entire distribution contract on the adhoc path.
 
-**When to POST in interactive (adhoc) chat sessions:** only when findings are **materially new** — i.e. the page was missing or stale (>48h) AND `web_search` returned new dated facts that change the brief. Do NOT POST for clarifying questions, lookups, or trivial edits — those just write to gbrain silently and the next cron cycle will pick them up.
-
-**When to POST in heartbeat sessions:** never. Heartbeats refresh gbrain only; cron is the channel that emails sales reps.
-
-### Adhoc payload + delivery
-
-Build the payload (mirrors the cron format, with `silent: true` and `runId` in adhoc form):
-
-```json
-{
-  "runId": "YYYY-MM-DD-adhoc",
-  "timestamp": "<ISO 8601 now>",
-  "silent": true,
-  "updatedTargets": [
-    {
-      "type": "company" | "attendee" | "event",
-      "name": "<exact entity name>",
-      "summary": "<2–3 sentence update>",
-      "salesAngle": "<1 sentence mapping target situation to a specific Rakuten Symphony capability>",
-      "recommendedAction": "<1 sentence time-sensitive next step, omit if no clear trigger>",
-      "fullReport": "<the new findings stored in gbrain>"
-    }
-  ]
-}
-```
-
-- `type`: `"company"` for corporate entities, `"attendee"` for individuals, `"event"` for conferences.
-- `name`: the human-readable entity name.
-
-Use `write_file` to write the payload to `/tmp/intel-report-adhoc.json`, then use `exec` to run the command **exactly as written below** — always the absolute path, never a shortened relative form like `python3 sync_db.py …`:
-
-```
-python3 /home/node/.openclaw/workspace/sync_db.py /tmp/intel-report-adhoc.json
-```
-
-If delivery fails, output a bold **FATAL database sync error** with the python output. Never fail silently.
+**Cron path is unchanged**: scheduled cron jobs still build and POST their own payload (see § Heartbeats & Cron). Heartbeats refresh gbrain only.
 
 ## Research Tools
 - `web_search`: Primary search for B2B tech/telecom intelligence. **Search must use this tool.** Never shell out via `exec` to invented CLIs like `brave-search`, `tavily`, `sleep && <search-cli>`, or `curl https://search.brave.com/...`. There is no search CLI in the container; `web_search` is the only sanctioned path. If `web_search` fails, surface the failure — do not invent fallbacks.

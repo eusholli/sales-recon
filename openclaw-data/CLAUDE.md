@@ -68,6 +68,12 @@ When modifying agent behavior, these are the authoritative files:
 - **`workspace/SOUL.md`** — Core personality traits and guiding principles (edit with care; tell the user if you change it)
 - **`workspace/HEARTBEAT.md`** — Active periodic tasks (keep small to limit token cost)
 
+## Exec Allowlist — single source of truth
+
+`exec-approvals.json` is per-environment state and is gitignored (the file contains a socket token). To keep dev and prod consistent, the entrypoint script (`scripts/docker-entrypoint.release.sh`, `SEED_BINS` near the top of the allowlist-seed block) is the **single source of truth** for which binaries the agent may exec. Any new bin the agent needs must be added to `SEED_BINS` there — never by hand-editing `exec-approvals.json` on one host. The entrypoint verifies on every start that all `SEED_BINS` paths are present in the allowlist and hard-fails if not.
+
+Adhoc intelligence distribution does NOT use `exec` anymore: ws-proxy and viber-proxy auto-POST the `STRUCTURED_REPORT` block to the event-planner webhook. The agent only needs to emit the block.
+
 ## Security / Gitignore
 
 The `.gitignore` deliberately excludes:

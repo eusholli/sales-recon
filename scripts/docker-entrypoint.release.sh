@@ -143,6 +143,29 @@ print(json.dumps(data))
 fi
 echo "[entrypoint] SEED_BINS allowlisted for agent main"
 
+# Verify every SEED_BIN path actually landed in the allowlist. The `approvals
+# set --stdin` pipeline above only fails on exit codes; a malformed JSON merge
+# could still leave entries missing. Re-read the file and assert presence so
+# dev and prod cannot silently diverge.
+echo "[entrypoint] verifying allowlist contains every SEED_BIN path"
+if ! node /app/dist/index.js approvals get --json | BIN_PATHS="$BIN_PATHS" python3 -c "
+import os, sys, json
+data = json.load(sys.stdin)
+# approvals get --json wraps the file contents under a top-level 'file' key;
+# fall back to the bare shape in case that envelope changes in future versions.
+root = data.get('file', data)
+present = {e.get('pattern') for e in root.get('agents', {}).get('main', {}).get('allowlist', [])}
+expected = [p for p in os.environ.get('BIN_PATHS', '').split() if p]
+missing = [p for p in expected if p not in present]
+if missing:
+    sys.stderr.write('MISSING: ' + ' '.join(missing) + '\n')
+    sys.exit(2)
+"; then
+    echo "[entrypoint] FATAL: allowlist verification failed — some SEED_BIN paths did not persist" >&2
+    exit 1
+fi
+echo "[entrypoint] allowlist verification ok"
+
 # Start gbrain Minion worker as a background daemon. Runs persistently so jobs
 # submitted via MCP (e.g. autopilot-cycle from cron) are picked up immediately.
 # Started here (after gbrain init + allowlist seed) so the worker has a valid

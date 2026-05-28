@@ -77,6 +77,50 @@ openclaw.connect();
 // Dedupe webhook deliveries — Viber may retry on transient failure.
 const recentTokens = new LRUCache(1000);
 
+// Post a structured TargetUpdate to the event-planner intel-report webhook so
+// the intelligenceReport table is updated immediately after every Viber
+// intelligence response. Mirrors ws-proxy/index.js postIntelligenceReport so
+// the agent never needs to shell out to sync_db.py.
+async function postIntelligenceReport(report) {
+    if (!WEBAPP_URL || !CRON_SECRET_KEY) {
+        console.warn('[viber-proxy] WEBAPP_URL or CRON_SECRET_KEY not set — skipping intel report sync');
+        return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const target = {
+        type: report.type,
+        name: report.name,
+        summary: report.summary,
+        salesAngle: report.salesAngle,
+        fullReport: report.fullReport,
+        ...(report.recommendedAction ? { recommendedAction: report.recommendedAction } : {}),
+    };
+    const payload = {
+        runId: `${today}-adhoc`,
+        timestamp: new Date().toISOString(),
+        silent: true,
+        updatedTargets: [target],
+    };
+    try {
+        const res = await fetch(`${WEBAPP_URL}/api/webhooks/intel-report`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${CRON_SECRET_KEY}`,
+            },
+            body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+            console.log(`[viber-proxy] Intel report synced: ${report.type} '${report.name}'`);
+        } else {
+            const text = await res.text();
+            console.error(`[viber-proxy] Intel report sync failed: ${res.status} ${text}`);
+        }
+    } catch (err) {
+        console.error('[viber-proxy] Intel report sync error:', err.message);
+    }
+}
+
 function isLinkedReply(viberName) {
     const url = `${WEBAPP_URL}/account/link-viber`;
     return `Hi${viberName ? ' ' + viberName : ''}! To use this bot, link your account first:\n${url}`;
@@ -279,6 +323,7 @@ async function handleMessageEvent(body) {
             }
             if (report) {
                 console.log(`[viber-proxy] structured report: type=${report.type} name=${report.name}`);
+                postIntelligenceReport(report).catch(() => {});
             }
         },
     });
