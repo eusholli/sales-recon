@@ -21,16 +21,6 @@ import {
 
 const STRUCTURED_REPORT_REGEX = /```json\s+STRUCTURED_REPORT\s*([\s\S]*?)```/i;
 
-const STRUCTURED_REPORT_INSTRUCTIONS = `
-
-After your normal markdown reply, append a final fenced JSON block tagged STRUCTURED_REPORT containing a TargetUpdate object that summarizes the intel. Required fields: "type" ("company"|"attendee"|"event"), "name", "summary" (2-3 sentences), "salesAngle" (1 sentence citing a Rakuten Symphony capability), "fullReport" (the markdown body of your reply). Optional: "recommendedAction" (concrete next step). Format exactly:
-
-\`\`\`json STRUCTURED_REPORT
-{ "type": "...", "name": "...", "summary": "...", "salesAngle": "...", "fullReport": "...", "recommendedAction": "..." }
-\`\`\`
-
-Only include the STRUCTURED_REPORT block when you have actually researched a company, person, or event this turn. For greetings, chitchat, general questions, status checks, capability questions, clarifications, or any response that does not involve fresh intelligence research, omit the block entirely.`;
-
 function stripThinkingBlocks(content) {
     return content.replace(/<(?:think|thinking)[^>]*>[\s\S]*?<\/(?:think|thinking)>/gi, '').trim();
 }
@@ -88,6 +78,8 @@ export class OpenClawClient {
         // request id -> sessionKey (so we can clean up handlers if the server
         // returns an error rather than streaming)
         this.pendingRequests = new Map();
+        // sessionKey -> sessionId returned by the server (for thread continuity)
+        this.sessionIds = new Map();
     }
 
     connect() {
@@ -158,8 +150,11 @@ export class OpenClawClient {
                 }
                 this.sessionHandlers.delete(sessionKey);
                 this.pendingRequests.delete(msg.id);
-            } else if (msg.ok) {
-                // ack — actual content comes via events
+            } else if (sessionKey && msg.ok) {
+                // Store sessionId for thread continuity on subsequent sends
+                if (msg.payload?.sessionId) {
+                    this.sessionIds.set(sessionKey, msg.payload.sessionId);
+                }
             }
             return;
         }
@@ -277,36 +272,33 @@ export class OpenClawClient {
      * @param {object} args
      * @param {string} args.sessionKey
      * @param {string} args.message              raw user message text
-     * @param {object} [args.actionCtx]          { actionToken, appUrl, role, eventId, eventSlug }
      * @param {string} [args.entityType]
      * @param {string} [args.entityName]
      * @param {function(string):void} [args.onDelta]
      * @param {function({text:string, report:object|null}):void} args.onFinal
      */
-    sendMessage({ sessionKey, message, actionCtx, entityType, entityName, onDelta, onFinal }) {
+    sendMessage({ sessionKey, message, entityType, entityName, onDelta, onFinal }) {
         if (!this.isConnected || !this.ws) {
             if (onFinal) onFinal({ text: 'Not connected to agent. Please try again.', report: null });
             return;
         }
 
-        let baseMessage = entityType && entityName
-            ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}${STRUCTURED_REPORT_INSTRUCTIONS}`
-            : `${message}${STRUCTURED_REPORT_INSTRUCTIONS}`;
-
-        if (actionCtx && actionCtx.actionToken) {
-            baseMessage += `\n\n[ActionCtx appUrl="${actionCtx.appUrl}" token="${actionCtx.actionToken}" eventId="${actionCtx.eventId ?? ''}" eventSlug="${actionCtx.eventSlug ?? ''}" role="${actionCtx.role}"]`;
-        }
+        const baseMessage = entityType && entityName
+            ? `Generate an intelligence report for ${entityType} "${entityName}". User request: ${message}`
+            : message;
 
         const id = this._nextId();
         this.sessionHandlers.set(sessionKey, { onDelta, onFinal, buffer: '' });
         this.pendingRequests.set(id, sessionKey);
 
+        const sessionId = this.sessionIds.get(sessionKey);
         const payload = {
             type: 'req',
             id,
             method: 'chat.send',
             params: {
                 sessionKey,
+                ...(sessionId ? { sessionId } : {}),
                 idempotencyKey: `idem-${Date.now()}-${id}`,
                 message: baseMessage,
             },

@@ -108,11 +108,6 @@ async function redeemLinkCode({ code, viberUserId, viberName }) {
     return json;
 }
 
-async function mintSession(clerkUserId) {
-    const { status, json } = await callWebapp('/api/intelligence/session-by-userid', { clerkUserId });
-    if (status !== 200 || !json) return null;
-    return json;
-}
 
 function isGroupMessage(body) {
     // Viber community/group messages carry chat_id and a sender that is a member of the chat.
@@ -215,17 +210,6 @@ async function handleMessageEvent(body) {
         return;
     }
 
-    const session = await mintSession(lookup.clerkUserId);
-    if (!session || !session.actionToken) {
-        const errMsg = 'Could not establish a secure session. Please try again in a moment.';
-        if (group) {
-            await viber.sendText({ type: 'public_account', chat_id: chatId, from: sender.id }, errMsg);
-        } else {
-            await viber.sendText(sender.id, errMsg);
-        }
-        return;
-    }
-
     const sessionKey = deriveSessionKey({ group, clerkUserId: lookup.clerkUserId, chatId }).toLowerCase();
 
     // Acknowledge fast so the user sees activity.
@@ -238,22 +222,14 @@ async function handleMessageEvent(body) {
         console.warn('[viber-proxy] ack send failed:', e.message);
     }
 
-    const actionCtx = {
-        actionToken: session.actionToken,
-        appUrl: WEBAPP_URL,
-        role: session.role || lookup.role || 'user',
-        eventId: '',
-        eventSlug: '',
-    };
-
+    const role = lookup.role || 'user';
     const userMessage = group
-        ? `[from: ${lookup.clerkName || sender.name || 'unknown'}, role: ${actionCtx.role}] ${effectiveText}`
+        ? `[from: ${lookup.clerkName || sender.name || 'unknown'}, role: ${role}] ${effectiveText}`
         : effectiveText;
 
     openclaw.sendMessage({
         sessionKey,
         message: userMessage,
-        actionCtx,
         onFinal: async ({ text, report }) => {
             const finalText = ViberClient.convertMarkdown((text && text.trim()) || 'No response.');
             console.log(`[viber-proxy] onFinal: sending reply (${finalText.length} chars)`);
