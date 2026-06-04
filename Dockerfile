@@ -18,7 +18,11 @@ ENV PATH="/home/node/.bun/bin:${PATH}"
 # Clone gbrain at a pinned commit and link the CLI globally for the node user.
 # Per INSTALL_FOR_AGENTS.md, do NOT use `bun install -g github:...` — it skips
 # postinstall hooks; use the clone + bun link path instead.
-ARG GBRAIN_REF=master
+# Pin to a known-good commit (v0.42.25.0). Floating `master` was both
+# non-reproducible and frozen by Docker layer cache. Bump this SHA deliberately
+# to update gbrain. Includes the dream-cycle "connect() has not been called"
+# fix (#1805) + Minion worker DB self-defense (#1801).
+ARG GBRAIN_REF=9a0bae8d62cdd1e0dd6655e24e082fe6c69c5dac
 RUN git clone https://github.com/garrytan/gbrain.git /home/node/gbrain \
     && cd /home/node/gbrain \
     && git checkout "${GBRAIN_REF}" \
