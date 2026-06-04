@@ -231,6 +231,7 @@ async def run_agent_batch(batch_idx: int, targets: list[Target], run_id: str, ru
         "node", "/app/openclaw.mjs", "agent",
         "--agent", "main",
         "--session-id", session_id,
+        "--session", "isolated",
         "--message", prompt,
         "--timeout", str(AGENT_TIMEOUT_S),
     ]

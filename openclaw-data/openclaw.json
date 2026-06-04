@@ -1,7 +1,7 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.5.22",
-    "lastTouchedAt": "2026-05-28T15:52:22.742Z"
+    "lastTouchedAt": "2026-06-04T15:10:58.101Z"
   },
   "wizard": {
     "lastRunAt": "2026-05-24T21:04:48.746Z",
@@ -489,7 +489,7 @@
         "headers": {
           "Authorization": "Bearer ${CRON_SECRET_KEY}"
         },
-        "url": "http://host.docker.internal:3000/api/mcp/sse"
+        "url": "https://events.maximh.us/api/mcp/sse"
       }
     }
   }

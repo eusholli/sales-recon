@@ -204,13 +204,6 @@ export class OpenClawClient {
                 handler.buffer += payload.data.delta;
                 if (handler.onDelta) handler.onDelta(payload.data.delta);
             }
-            if (payload.message?.role === 'assistant' && payload.message?.content) {
-                const content = typeof payload.message.content === 'string'
-                    ? payload.message.content
-                    : JSON.stringify(payload.message.content);
-                handler.buffer += content;
-                if (handler.onDelta) handler.onDelta(content);
-            }
             return;
         }
 
@@ -221,10 +214,13 @@ export class OpenClawClient {
             if (!handler) return;
 
             if (payload.state === 'final') {
-                if (!handler.buffer && payload.message?.role === 'assistant' && payload.message?.content) {
-                    handler.buffer = typeof payload.message.content === 'string'
+                if (payload.message?.role === 'assistant' && payload.message?.content) {
+                    const finalText = typeof payload.message.content === 'string'
                         ? payload.message.content
-                        : JSON.stringify(payload.message.content);
+                        : Array.isArray(payload.message.content)
+                            ? payload.message.content.filter(p => p?.type === 'text').map(p => p.text).join('\n')
+                            : JSON.stringify(payload.message.content);
+                    if (finalText) handler.buffer = finalText;
                 }
                 if (!handler.buffer) {
                     handler.buffer = "I wasn't able to generate a response. Please try again.";

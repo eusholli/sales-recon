@@ -181,6 +181,11 @@ if ! kill -0 "$GBRAIN_WORKER_PID" 2>/dev/null; then
 fi
 echo "[entrypoint] gbrain Minion worker running (pid=$GBRAIN_WORKER_PID)"
 
+# Clear stale session write locks left by previous ungraceful shutdowns.
+# These are guaranteed stale at startup since the process that held them is gone.
+echo "[entrypoint] clearing any stale OpenClaw session write locks"
+find /home/node/.openclaw/agents -name "*.jsonl.lock" -delete 2>/dev/null || true
+
 if [ -f "/docker-entrypoint.sh" ]; then
     exec /docker-entrypoint.sh "$@"
 else
