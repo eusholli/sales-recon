@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://event-planner/marketing/campaign-proposal.schema.json",
+  "title": "CampaignProposalOutput",
+  "description": "Agent output for ONE marketing campaign proposal. POSTed (wrapped in { runId, proposals: [...] }) to event-planner /api/webhooks/campaign-proposal, idempotent on (runId, theme).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["theme", "title", "rationale", "proposalContent"],
+  "properties": {
+    "theme": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The strategy theme this campaign advances (verbatim from the ingested strategy). Idempotency key with runId."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short campaign title, e.g. 'AI-RAN momentum: own the open-vRAN economics narrative'."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 1,
+      "description": "2-4 sentences: why now, grounded in current market signal, mapped to a Rakuten Symphony capability."
+    },
+    "proposalContent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Full markdown campaign brief: market signal, target audience/companies, the angle, channels, and the supporting content to use (citing reused asset ids/URLs from the inventory)."
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional event UUID or slug if the campaign targets a specific event. Omit for cross-event campaigns (the default in Phase 1)."
+    },
+    "reusedAssets": {
+      "type": "array",
+      "description": "Existing content the agent reused/repurposed (reuse-first). Cite by id and/or url from the content-inventory.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "kind": { "type": "string", "description": "contentTask | linkedInDraft | campaignProposal | url" },
+          "id": { "type": "string" },
+          "url": { "type": "string" },
+          "title": { "type": "string" }
+        }
+      }
+    },
+    "suggestedContentTasks": {
+      "type": "array",
+      "description": "Execution items materialized as ContentTask rows on activation.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "contentType": { "type": "string", "description": "MUST be exactly one of the ALLOWED contentType values provided in the prompt (off-list values are dropped server-side)." },
+          "tags": { "type": "array", "items": { "type": "string" }, "description": "Each value MUST be one of the ALLOWED tag values provided in the prompt; off-list tags are dropped." }
+        }
+      }
+    },
+    "suggestedLinkedInArticles": {
+      "type": "array",
+      "description": "Materialized as LinkedInDraft rows on activation ONLY when eventId is set (the draft FK requires an event).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["content"],
+        "properties": {
+          "title": { "type": "string" },
+          "content": { "type": "string", "minLength": 1, "description": "Draft article markdown (or an outline to hand to the li-article-agent)." },
+          "angle": { "type": "string" },
+          "tone": { "type": "string" },
+          "articleType": { "type": "string" },
+          "companyNames": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "discoveredCompanies": {
+      "type": "array",
+      "description": "New target companies discovered while researching this theme. The webhook resolve-or-creates these as Company records (Phase 1 enrichment).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "description": "ALWAYS include a one-line description (industry/focus)." },
+          "region": { "type": "string" }
+        }
+      }
+    }
+  }
+}

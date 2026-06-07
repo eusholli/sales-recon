@@ -226,12 +226,14 @@ async def run_agent_batch(batch_idx: int, targets: list[Target], run_id: str, ru
 
     await rate_limiter.acquire()
 
+    # Unique session-id per batch gives a fresh/isolated session. OpenClaw 2026.5.22
+    # has no `--session isolated` mode (only an explicit --session-id); passing it
+    # made the agent exit 1 with "does not recognize option --session".
     session_id = f"intel-{run_id}-b{batch_idx:04d}"
     cmd = [
         "node", "/app/openclaw.mjs", "agent",
         "--agent", "main",
         "--session-id", session_id,
-        "--session", "isolated",
         "--message", prompt,
         "--timeout", str(AGENT_TIMEOUT_S),
     ]

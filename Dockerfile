@@ -45,8 +45,10 @@ RUN chmod +x /usr/local/bin/sales-recon-entrypoint.sh
 # into the image (not volume-mounted) so a deploy ships the dispatcher and
 # its prompts atomically.
 COPY intel-dispatcher.py /app/intel-dispatcher.py
+COPY marketing-once.py /app/marketing-once.py
+COPY marketing-runner.py /app/marketing-runner.py
 COPY prompts /app/prompts
-RUN chmod +x /app/intel-dispatcher.py
+RUN chmod +x /app/intel-dispatcher.py /app/marketing-once.py /app/marketing-runner.py
 USER node
 
 WORKDIR /app

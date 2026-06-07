@@ -181,6 +181,18 @@ if ! kill -0 "$GBRAIN_WORKER_PID" 2>/dev/null; then
 fi
 echo "[entrypoint] gbrain Minion worker running (pid=$GBRAIN_WORKER_PID)"
 
+# Start the on-demand marketing campaign runner in the background. It polls
+# event-planner for PENDING CampaignRunRequest rows (the "Generate Campaign" button)
+# and runs marketing-once.py for each. Soft-fail: it is not load-bearing for the agent,
+# so a crash here must not abort the deploy. Only started when CRON wiring is present.
+if [ -n "${CRON_EVENT_PLANNER_DNS:-}" ] && [ -n "${CRON_SECRET_KEY:-}" ] && [ -f /app/marketing-runner.py ]; then
+    echo "[entrypoint] starting marketing campaign runner in background"
+    python3 /app/marketing-runner.py &
+    echo "[entrypoint] marketing-runner started (pid=$!)"
+else
+    echo "[entrypoint] CRON wiring or marketing-runner.py missing — skipping marketing runner"
+fi
+
 # Clear stale session write locks left by previous ungraceful shutdowns.
 # These are guaranteed stale at startup since the process that held them is gone.
 echo "[entrypoint] clearing any stale OpenClaw session write locks"
