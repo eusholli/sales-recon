@@ -1,10 +1,10 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.5.22",
-    "lastTouchedAt": "2026-06-07T13:26:28.910Z"
+    "lastTouchedAt": "2026-06-07T16:50:23.812Z"
   },
   "wizard": {
-    "lastRunAt": "2026-05-24T21:04:48.746Z",
+    "lastRunAt": "2026-06-07T16:49:56.531Z",
     "lastRunVersion": "2026.5.22",
     "lastRunCommand": "doctor",
     "lastRunMode": "local"
@@ -158,18 +158,13 @@
     "list": [
       {
         "id": "main",
-        "default": true,
-        "name": "Symphony Signal",
-        "subagents": {
-          "allowAgents": [
-            "*"
-          ]
-        },
         "tools": {
           "exec": {
             "security": "allowlist",
             "ask": "off",
             "safeBins": [
+              "python3",
+              "gbrain",
               "curl",
               "sleep",
               "echo",
@@ -187,6 +182,8 @@
               "find"
             ],
             "safeBinProfiles": {
+              "python3": {},
+              "gbrain": {},
               "curl": {},
               "sleep": {},
               "echo": {},
@@ -489,7 +486,7 @@
         "headers": {
           "Authorization": "Bearer ${CRON_SECRET_KEY}"
         },
-        "url": "http://host.docker.internal:3000/api/mcp/sse"
+        "url": "https://events.maximh.us/api/mcp/sse"
       }
     }
   }

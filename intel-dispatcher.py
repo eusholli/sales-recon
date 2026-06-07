@@ -60,7 +60,7 @@ CONCURRENCY = int(os.environ.get("INTEL_DISPATCH_CONCURRENCY", "4"))
 NOTIFY_CHUNK = int(os.environ.get("INTEL_NOTIFY_CHUNK", "20"))
 LLM_RPM = int(os.environ.get("LLM_RPM", "120"))
 AGENT_TIMEOUT_S = int(os.environ.get("INTEL_AGENT_TIMEOUT_S", "900"))
-WEBHOOK_TIMEOUT_S = int(os.environ.get("INTEL_WEBHOOK_TIMEOUT_S", "120"))
+WEBHOOK_TIMEOUT_S = int(os.environ.get("INTEL_WEBHOOK_TIMEOUT_S", "310"))
 POISON_THRESHOLD = int(os.environ.get("INTEL_POISON_THRESHOLD", "3"))
 
 

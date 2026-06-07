@@ -166,6 +166,51 @@ if missing:
 fi
 echo "[entrypoint] allowlist verification ok"
 
+# Patch safeBins in openclaw.json to include python3 and gbrain.
+# Under OpenClaw v2026.5.22 the effective exec policy is the intersection of
+# safeBins (requested/agent side) and exec-approvals.json (host side). Both
+# must permit a binary. python3 and gbrain are in exec-approvals but were
+# absent from safeBins, causing allowlist-miss denials for the cron agent.
+echo "[entrypoint] patching safeBins to include python3 and gbrain"
+node /app/dist/index.js config patch --stdin <<'PATCH'
+{
+  "agents": {
+    "list": [
+      {
+        "id": "main",
+        "tools": {
+          "exec": {
+            "security": "allowlist",
+            "ask": "off",
+            "safeBins": ["python3", "gbrain", "curl", "sleep", "echo", "cat", "touch", "mkdir", "rm", "trash", "ls", "pwd", "head", "tail", "wc", "grep", "find"],
+            "safeBinProfiles": {
+              "python3": {},
+              "gbrain": {},
+              "curl": {},
+              "sleep": {},
+              "echo": {},
+              "cat": {},
+              "touch": {},
+              "mkdir": {},
+              "rm": {},
+              "trash": {},
+              "ls": {},
+              "pwd": {},
+              "head": {},
+              "tail": {},
+              "wc": {},
+              "grep": {},
+              "find": {}
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+PATCH
+echo "[entrypoint] safeBins patch applied"
+
 # Start gbrain Minion worker as a background daemon. Runs persistently so jobs
 # submitted via MCP (e.g. autopilot-cycle from cron) are picked up immediately.
 # Started here (after gbrain init + allowlist seed) so the worker has a valid
