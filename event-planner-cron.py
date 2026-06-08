@@ -204,7 +204,7 @@ def run_cron_add(name, cron_expr, message=CRON_MSG):
 
 if __name__ == "__main__":
     jobs_to_add = [
-        ("market-intelligence-tuesday", "0 1 * * 1", CRON_MSG),
+        ("market-intelligence-weekly", "0 1 * * 1", CRON_MSG),
         ("gbrain-dream-cycle-nightly", "0 3 * * *", DREAM_CYCLE_MSG),
     ]
     remove_existing_jobs([job[0] for job in jobs_to_add])
