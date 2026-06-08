@@ -60,7 +60,7 @@ node /app/dist/index.js doctor --fix
 # interpolated now (resolved $GBRAIN_BIN), the env vars stay as placeholders.
 echo "[entrypoint] registering gbrain MCP server with OpenClaw"
 node /app/dist/index.js mcp set gbrain \
-    "$(printf '{"command":"%s","args":["serve"],"env":{"DATABASE_URL":"${DATABASE_URL}","GOOGLE_GENERATIVE_AI_API_KEY":"${GOOGLE_GENERATIVE_AI_API_KEY}","OPENAI_API_KEY":"${OPENAI_API_KEY}"}}' "$GBRAIN_BIN")"
+    "$(printf '{"command":"%s","args":["serve"],"env":{"DATABASE_URL":"${DATABASE_URL}","GOOGLE_GENERATIVE_AI_API_KEY":"${GOOGLE_GENERATIVE_AI_API_KEY}","OPENAI_API_KEY":"${OPENAI_API_KEY}","ANTHROPIC_API_KEY":"${ANTHROPIC_API_KEY}"}}' "$GBRAIN_BIN")"
 
 # Spawn probe: catches the class of bug where the registered absolute path
 # does not actually exist (the original gbrain ENOENT regression). --version

@@ -1,7 +1,7 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.5.22",
-    "lastTouchedAt": "2026-06-08T04:10:24.929Z"
+    "lastTouchedAt": "2026-06-08T21:13:01.807Z"
   },
   "wizard": {
     "lastRunAt": "2026-06-07T16:49:56.531Z",
@@ -484,14 +484,15 @@
         "env": {
           "DATABASE_URL": "${DATABASE_URL}",
           "GOOGLE_GENERATIVE_AI_API_KEY": "${GOOGLE_GENERATIVE_AI_API_KEY}",
-          "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+          "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+          "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
         }
       },
       "event-planner": {
         "headers": {
           "Authorization": "Bearer ${CRON_SECRET_KEY}"
         },
-        "url": "https://events.maximh.us/api/mcp/sse"
+        "url": "http://host.docker.internal:3000/api/mcp/sse"
       }
     }
   }
