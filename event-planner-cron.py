@@ -185,7 +185,7 @@ def run_cron_add(name, cron_expr, message=CRON_MSG):
         "isolated",
         "--no-deliver",
         "--tz",
-        "America/Chicago",
+        "UTC",
     ]
     print(f"Adding cron job: {name} (cron: {cron_expr})")
     try:

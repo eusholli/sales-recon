@@ -1,7 +1,7 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.5.22",
-    "lastTouchedAt": "2026-06-07T16:50:23.812Z"
+    "lastTouchedAt": "2026-06-08T04:10:24.929Z"
   },
   "wizard": {
     "lastRunAt": "2026-06-07T16:49:56.531Z",
@@ -260,6 +260,11 @@
           "line"
         ]
       }
+    },
+    "exec": {
+      "host": "gateway",
+      "security": "full",
+      "ask": "off"
     }
   },
   "commands": {
