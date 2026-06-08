@@ -1,7 +1,7 @@
 {
   "meta": {
     "lastTouchedVersion": "2026.5.22",
-    "lastTouchedAt": "2026-06-08T21:13:01.807Z"
+    "lastTouchedAt": "2026-06-08T21:34:47.379Z"
   },
   "wizard": {
     "lastRunAt": "2026-06-07T16:49:56.531Z",
@@ -157,51 +157,7 @@
     },
     "list": [
       {
-        "id": "main",
-        "tools": {
-          "exec": {
-            "security": "allowlist",
-            "ask": "off",
-            "safeBins": [
-              "python3",
-              "gbrain",
-              "curl",
-              "sleep",
-              "echo",
-              "cat",
-              "touch",
-              "mkdir",
-              "rm",
-              "trash",
-              "ls",
-              "pwd",
-              "head",
-              "tail",
-              "wc",
-              "grep",
-              "find"
-            ],
-            "safeBinProfiles": {
-              "python3": {},
-              "gbrain": {},
-              "curl": {},
-              "sleep": {},
-              "echo": {},
-              "cat": {},
-              "touch": {},
-              "mkdir": {},
-              "rm": {},
-              "trash": {},
-              "ls": {},
-              "pwd": {},
-              "head": {},
-              "tail": {},
-              "wc": {},
-              "grep": {},
-              "find": {}
-            }
-          }
-        }
+        "id": "main"
       }
     ]
   },

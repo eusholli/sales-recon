@@ -68,9 +68,11 @@ When modifying agent behavior, these are the authoritative files:
 - **`workspace/SOUL.md`** — Core personality traits and guiding principles (edit with care; tell the user if you change it)
 - **`workspace/HEARTBEAT.md`** — Active periodic tasks (keep small to limit token cost)
 
-## Exec Allowlist — single source of truth
+## Exec Policy — yolo (allow-all)
 
-`exec-approvals.json` is per-environment state and is gitignored (the file contains a socket token). To keep dev and prod consistent, the entrypoint script (`scripts/docker-entrypoint.release.sh`, `SEED_BINS` near the top of the allowlist-seed block) is the **single source of truth** for which binaries the agent may exec. Any new bin the agent needs must be added to `SEED_BINS` there — never by hand-editing `exec-approvals.json` on one host. The entrypoint verifies on every start that all `SEED_BINS` paths are present in the allowlist and hard-fails if not.
+The agent runs with **yolo** exec policy (allow all commands, no per-binary allowlist). This is set by the entrypoint (`scripts/docker-entrypoint.release.sh`) on every container start via `node /app/dist/index.js exec-policy preset yolo`, which writes `defaults.security: "full"` into `exec-approvals.json`. The `main` agent in `openclaw.json` carries no per-agent `tools.exec` override, so it inherits the global `tools.exec.security: "full"` setting. Do not add a per-agent `tools.exec` block to `openclaw.json` — it would deep-merge over the global config and re-introduce allowlist restrictions.
+
+`exec-approvals.json` is gitignored (contains a socket token) and is fully managed at runtime by the entrypoint.
 
 Adhoc intelligence distribution does NOT use `exec` anymore: ws-proxy and viber-proxy auto-POST the `STRUCTURED_REPORT` block to the event-planner webhook. The agent only needs to emit the block.
 
