@@ -47,7 +47,8 @@ Slugs are lowercase and hyphenated.
 1. Before researching, call `gbrain.get_page(slug)`. Missing is fine — proceed and create.
 2. **Freshness gate**: if `page.updated_at` is within the last 48 hours, skip research unless the user explicitly asks for fresh data.
 3. After research, call `gbrain.put_page(slug, title, body, timeline_entries=[{date, source, detail}, ...])`. gbrain auto-extracts entity links and reconciles the graph on every write — do NOT call any link/extract tool yourself.
-4. **No manual pruning, no append-only files, no 150-line limit.** The nightly dream cycle handles archive / embeddings / salience.
+4. **Wikilinks**: Include `[[slug]]` cross-references in the body when a relationship is known. Examples: a person page body should contain `[[companies/<employer-slug>]]`; an event page should reference `[[companies/<sponsor-slug>]]` and `[[people/<speaker-slug>]]` where relevant. These links are how gbrain builds its knowledge graph — pages with no inbound links are invisible to graph-based recall.
+5. **No manual pruning, no append-only files, no 150-line limit.** The nightly dream cycle handles archive / embeddings / salience.
 
 ### Rakuten Symphony capability lookup
 Use `gbrain.query("Rakuten Symphony capabilities relevant to <target>")` to retrieve relevant RS capability context for sales angles. Do NOT rely on a static `memory/Rakuten_Symphony.md` — that file is deprecated.
